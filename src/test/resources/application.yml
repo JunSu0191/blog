@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: blog
+  datasource:
+    url: ${TEST_DB_URL:${DB_URL:jdbc:mysql://localhost:3306/blog?serverTimezone=Asia/Seoul}}
+    username: ${TEST_DB_USERNAME:${DB_USERNAME:root}}
+    password: ${TEST_DB_PASSWORD:${DB_PASSWORD:}}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  servlet:
+    multipart:
+      enabled: true
+      max-file-size: 10MB
+      max-request-size: 10MB
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    baseline-description: Initial schema
+    locations: classpath:db/migration
+
+jwt:
+  secret: ${TEST_JWT_SECRET:${JWT_SECRET:change-this-jwt-secret-at-least-32-bytes}}
+  expiration-ms: ${TEST_JWT_EXPIRATION_MS:${JWT_EXPIRATION_MS:3600000}}
