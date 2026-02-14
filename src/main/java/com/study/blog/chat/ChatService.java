@@ -65,6 +65,7 @@ public class ChatService {
             // DIRECT는 항상 "작은ID:큰ID"로 키를 고정해야 중복 방 생성이 방지된다.
             String directKey = buildDirectKey(requesterId, otherId);
             conversation = conversationRepository.findByDirectKey(directKey)
+                    .map(existing -> ensureDirectConversationMembers(existing, requesterId, otherId))
                     .orElseGet(() -> createDirectConversation(requester, directKey, otherId));
         } else {
             conversation = createGroupConversation(requester, req.getTitle(), req.getMemberIds());
@@ -139,6 +140,29 @@ public class ChatService {
         // conversation_member에 마지막 읽은 메시지 정보를 저장한다.
         member.setLastReadMessageId(lastRead.getId());
         member.setLastReadAt(LocalDateTime.now());
+
+        // 읽음 상태가 반영된 뒤, 본인 미읽음 카운트를 실시간으로 갱신한다.
+        runAfterCommitOrNow(() -> publishUnreadCountForUser(conversationId, userId));
+    }
+
+    public void leaveConversation(Long userId, Long conversationId) {
+        // 보안: 대화방 멤버만 나가기 가능
+        ensureMembership(conversationId, userId);
+
+        ChatConversation conversation = conversationRepository.findById(conversationId)
+                .orElseThrow(() -> new IllegalArgumentException("대화방을 찾을 수 없습니다."));
+
+        ChatConversationMember member = conversationMemberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("대화방 멤버를 찾을 수 없습니다."));
+        conversationMemberRepository.delete(member);
+
+        // 마지막 멤버가 나가면 대화방/메시지를 정리한다.
+        if (conversationMemberRepository.countByConversation_Id(conversationId) == 0) {
+            cleanupConversation(conversationId, conversation);
+        }
+
+        // 나가기 이후 본인 미읽음 카운트를 실시간으로 동기화한다.
+        runAfterCommitOrNow(() -> publishUnreadCountForUser(conversationId, userId));
     }
 
     public SendResult sendMessage(Long senderId, Long conversationId, ChatDto.SendMessageRequest req) {
@@ -178,6 +202,7 @@ public class ChatService {
         // (커밋 전에 보내면 롤백 시 "유령 이벤트"가 생길 수 있음)
         runAfterCommitOrNow(() -> {
             broadcastMessageCreated(conversationId, messageResponse);
+            broadcastUnreadCountForRecipients(conversationId, senderId, participants);
             notificationService.createChatMessageNotifications(
                     conversationId,
                     senderId,
@@ -214,6 +239,32 @@ public class ChatService {
             return conversationRepository.findByDirectKey(directKey)
                     .orElseThrow(() -> ex);
         }
+    }
+
+    private ChatConversation ensureDirectConversationMembers(ChatConversation conversation, Long requesterId, Long otherUserId) {
+        List<Long> missingMemberIds = new ArrayList<>(2);
+        if (!conversationMemberRepository.existsByConversation_IdAndUser_Id(conversation.getId(), requesterId)) {
+            missingMemberIds.add(requesterId);
+        }
+        if (!conversationMemberRepository.existsByConversation_IdAndUser_Id(conversation.getId(), otherUserId)) {
+            missingMemberIds.add(otherUserId);
+        }
+        if (missingMemberIds.isEmpty()) {
+            return conversation;
+        }
+
+        List<User> missingUsers = userRepository.findAllById(missingMemberIds);
+        if (missingUsers.size() != missingMemberIds.size()) {
+            throw new IllegalArgumentException("DIRECT 대화 멤버 사용자를 찾을 수 없습니다.");
+        }
+
+        try {
+            saveMembers(conversation, missingUsers);
+        } catch (DataIntegrityViolationException ignored) {
+            // 동시성으로 동일 멤버가 먼저 삽입된 경우 무시한다.
+        }
+
+        return conversation;
     }
 
     private ChatConversation createGroupConversation(User requester, String title, List<Long> memberIds) {
@@ -256,6 +307,13 @@ public class ChatService {
         conversationMemberRepository.saveAll(entities);
     }
 
+    private void cleanupConversation(Long conversationId, ChatConversation conversation) {
+        // self-FK(reply_to_message_id) 제약으로 인한 삭제 충돌을 막기 위해 참조를 먼저 해제한다.
+        messageRepository.clearReplyReferences(conversationId);
+        messageRepository.deleteByConversation_Id(conversationId);
+        conversationRepository.delete(conversation);
+    }
+
     private String buildDirectKey(Long a, Long b) {
         long min = Math.min(a, b);
         long max = Math.max(a, b);
@@ -296,6 +354,7 @@ public class ChatService {
         r.setDirectKey(conversation.getDirectKey());
         r.setLastMessage(lastMessage != null ? toMessageResponse(lastMessage) : null);
         r.setLastActivityAt(lastMessage != null ? lastMessage.getCreatedAt() : conversation.getCreatedAt());
+        r.setUnreadMessageCount(0L);
         return r;
     }
 
@@ -305,6 +364,7 @@ public class ChatService {
         r.setType(ConversationType.valueOf(p.getConversationType()));
         r.setTitle(p.getTitle());
         r.setDirectKey(p.getDirectKey());
+        r.setUnreadMessageCount(p.getUnreadMessageCount() != null ? p.getUnreadMessageCount() : 0L);
 
         if (p.getLastMessageId() != null) {
             ChatDto.MessageResponse m = new ChatDto.MessageResponse();
@@ -329,6 +389,25 @@ public class ChatService {
 
         // 구독 채널: /topic/conversations/{conversationId}
         realtimeEventPublisher.publishConversationMessage(conversationId, event);
+    }
+
+    private void broadcastUnreadCountForRecipients(Long conversationId, Long senderId, Collection<Long> participants) {
+        participants.stream()
+                .filter(userId -> !userId.equals(senderId))
+                .forEach(userId -> publishUnreadCountForUser(conversationId, userId));
+    }
+
+    private void publishUnreadCountForUser(Long conversationId, Long userId) {
+        long unreadMessageCount = conversationMemberRepository.countUnreadMessages(conversationId, userId);
+        long totalUnreadMessageCount = conversationMemberRepository.countTotalUnreadMessages(userId);
+
+        ChatDto.ConversationUnreadCountEvent event = new ChatDto.ConversationUnreadCountEvent();
+        event.setType("CONVERSATION_UNREAD_COUNT_UPDATED");
+        event.setConversationId(conversationId);
+        event.setUnreadMessageCount(unreadMessageCount);
+        event.setTotalUnreadMessageCount(totalUnreadMessageCount);
+
+        realtimeEventPublisher.publishConversationUnreadCount(userId, event);
     }
 
     private void runAfterCommitOrNow(Runnable runnable) {

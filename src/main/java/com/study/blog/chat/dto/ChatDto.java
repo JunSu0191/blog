@@ -28,6 +28,7 @@ public class ChatDto {
         private String directKey;
         private MessageResponse lastMessage;
         private LocalDateTime lastActivityAt;
+        private Long unreadMessageCount;
     }
 
     @Data
@@ -81,5 +82,13 @@ public class ChatDto {
         private Long conversationId;
         private MessageResponse message;
         private boolean deduplicated;
+    }
+
+    @Data
+    public static class ConversationUnreadCountEvent {
+        private String type;
+        private Long conversationId;
+        private Long unreadMessageCount;
+        private Long totalUnreadMessageCount;
     }
 }

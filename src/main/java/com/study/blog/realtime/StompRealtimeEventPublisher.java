@@ -29,6 +29,11 @@ public class StompRealtimeEventPublisher implements RealtimeEventPublisher {
     }
 
     @Override
+    public void publishConversationUnreadCount(Long userId, ChatDto.ConversationUnreadCountEvent event) {
+        messagingTemplate.convertAndSend("/topic/chat/unreads/" + userId, event);
+    }
+
+    @Override
     public void publishNotification(String username, Long userId, NotificationDto.Event event) {
         if (username != null && !username.isBlank()) {
             messagingTemplate.convertAndSendToUser(username, "/queue/notifications", event);

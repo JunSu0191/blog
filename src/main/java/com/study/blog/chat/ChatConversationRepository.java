@@ -20,7 +20,14 @@ public interface ChatConversationRepository extends JpaRepository<ChatConversati
                 lm.id AS lastMessageId,
                 lm.body AS lastMessageBody,
                 lm.created_at AS lastMessageCreatedAt,
-                lm.sender_id AS lastSenderId
+                lm.sender_id AS lastSenderId,
+                (
+                    SELECT COUNT(1)
+                    FROM chat_message um
+                    WHERE um.conversation_id = c.id
+                      AND um.sender_id <> cm.user_id
+                      AND (cm.last_read_message_id IS NULL OR um.id > cm.last_read_message_id)
+                ) AS unreadMessageCount
             FROM chat_conversation_member cm
             JOIN chat_conversation c ON c.id = cm.conversation_id
             LEFT JOIN chat_message lm ON lm.id = (
