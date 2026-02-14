@@ -18,4 +18,6 @@ public interface ConversationSummaryProjection {
     LocalDateTime getLastMessageCreatedAt();
 
     Long getLastSenderId();
+
+    Long getUnreadMessageCount();
 }

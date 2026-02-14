@@ -28,6 +28,7 @@ public class ChatStompSecurityInterceptor implements ChannelInterceptor {
 
     private static final Pattern APP_SEND_PATTERN = Pattern.compile("^/app/conversations/(\\d+)/send$");
     private static final Pattern TOPIC_SUBSCRIBE_PATTERN = Pattern.compile("^/topic/conversations/(\\d+)$");
+    private static final Pattern TOPIC_UNREAD_SUBSCRIBE_PATTERN = Pattern.compile("^/topic/chat/unreads/(\\d+)$");
 
     private final CurrentUserResolver currentUserResolver;
     private final ChatConversationMemberRepository conversationMemberRepository;
@@ -53,6 +54,19 @@ public class ChatStompSecurityInterceptor implements ChannelInterceptor {
 
         String destination = accessor.getDestination();
         if (destination == null) {
+            return message;
+        }
+
+        Long unreadTargetUserId = extractUnreadTargetUserId(command, destination);
+        if (unreadTargetUserId != null) {
+            Long xUserId = parseLongHeader(accessor.getNativeHeader("X-User-Id"));
+            Principal principal = accessor.getUser();
+            Long userId = currentUserResolver.resolveFromWebSocket(principal, xUserId);
+            if (!unreadTargetUserId.equals(userId)) {
+                log.warn("stomp unread subscribe denied: destination={}, targetUserId={}, userId={}, principal={}",
+                        destination, unreadTargetUserId, userId, principal != null ? principal.getName() : null);
+                return null;
+            }
             return message;
         }
 
@@ -94,6 +108,17 @@ public class ChatStompSecurityInterceptor implements ChannelInterceptor {
             return null;
         }
 
+        return Long.parseLong(matcher.group(1));
+    }
+
+    private Long extractUnreadTargetUserId(StompCommand command, String destination) {
+        if (command != StompCommand.SUBSCRIBE) {
+            return null;
+        }
+        Matcher matcher = TOPIC_UNREAD_SUBSCRIBE_PATTERN.matcher(destination);
+        if (!matcher.matches()) {
+            return null;
+        }
         return Long.parseLong(matcher.group(1));
     }
 

@@ -81,4 +81,13 @@ public class ChatController {
         chatService.markAsRead(userId, id, req.getLastReadMessageId());
         return ApiResponseFactory.noContent();
     }
+
+    @DeleteMapping("/conversations/{id}")
+    public ResponseEntity<ApiResponseTemplate<Void>> leaveConversation(
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @PathVariable Long id) {
+        Long userId = currentUserResolver.resolveFromRest(xUserId);
+        chatService.leaveConversation(userId, id);
+        return ApiResponseFactory.noContent();
+    }
 }

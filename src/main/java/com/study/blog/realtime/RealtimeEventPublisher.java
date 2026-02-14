@@ -9,5 +9,7 @@ public interface RealtimeEventPublisher {
 
     void publishConversationAck(String principalName, Long senderId, Long conversationId, ChatDto.MessageAckEvent ack);
 
+    void publishConversationUnreadCount(Long userId, ChatDto.ConversationUnreadCountEvent event);
+
     void publishNotification(String username, Long userId, NotificationDto.Event event);
 }

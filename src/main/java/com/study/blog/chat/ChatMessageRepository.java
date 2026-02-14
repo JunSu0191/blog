@@ -1,6 +1,7 @@
 package com.study.blog.chat;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -27,4 +28,15 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
             @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
             @Param("cursorMessageId") Long cursorMessageId,
             org.springframework.data.domain.Pageable pageable);
+
+    @Modifying
+    @Query("""
+            update ChatMessage m
+            set m.replyToMessage = null
+            where m.conversation.id = :conversationId
+              and m.replyToMessage is not null
+            """)
+    int clearReplyReferences(@Param("conversationId") Long conversationId);
+
+    void deleteByConversation_Id(Long conversationId);
 }
