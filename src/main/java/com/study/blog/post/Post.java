@@ -1,0 +1,76 @@
+package com.study.blog.post;
+
+import com.study.blog.attach.AttachFile;
+import com.study.blog.category.Category;
+import com.study.blog.user.User;
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * 제공된 SQL 스키마에 맞춘 Post JPA 엔티티입니다.
+ *
+ * 예시 SQL:
+ * CREATE TABLE posts (
+ *   id BIGINT AUTO_INCREMENT PRIMARY KEY,
+ *   user_id BIGINT NOT NULL,
+ *   title VARCHAR(200) NOT NULL,
+ *   content TEXT,
+ *   deleted_yn CHAR(1) DEFAULT 'N',
+ *   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+ *   FOREIGN KEY (user_id) REFERENCES users(id)
+ * );
+ */
+@Entity
+@Table(name = "posts", indexes = {
+        @Index(name = "idx_post_user_id", columnList = "user_id"),
+        @Index(name = "idx_post_created_at", columnList = "created_at"),
+        @Index(name = "idx_posts_category_id", columnList = "category_id")
+})
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Post {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    // User와의 다대일 관계입니다. 외래키는 `user_id` 컬럼에 저장됩니다.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
+
+    // 카테고리
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    private Category category;
+
+    @Column(nullable = false, length = 200)
+    private String title;
+
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String content;
+
+    @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
+    private String deletedYn = "N";
+
+    @Column(name = "created_at")
+    private LocalDateTime createdAt = LocalDateTime.now();
+
+    // 조회수 (캐시용)
+    @Column(name = "view_count")
+    private Long viewCount = 0L;
+
+    // 좋아요 수 (캐시용)
+    @Column(name = "like_count")
+    private Long likeCount = 0L;
+
+    @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)
+    private List<AttachFile> attachFiles = new ArrayList<>();
+}
