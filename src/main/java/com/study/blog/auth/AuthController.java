@@ -4,12 +4,14 @@ import com.study.blog.core.response.ApiResponseFactory;
 import com.study.blog.core.response.ApiResponseTemplate;
 import com.study.blog.security.JwtUtil;
 import com.study.blog.user.User;
+import com.study.blog.user.UserNamePolicy;
 import com.study.blog.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -47,7 +49,7 @@ public class AuthController {
         User user = User.builder()
                 .username(req.username())
                 .password(passwordEncoder.encode(req.password()))
-                .name(req.name())
+                .name(UserNamePolicy.resolveName(req.name(), req.username()))
                 .createdAt(LocalDateTime.now())
                 .deletedYn("N")
                 .build();
@@ -67,9 +69,34 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
         }
 
-        String token = jwtUtil.generateToken(req.username());
+        User user = userRepository.findByUsername(req.username())
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+        String token = jwtUtil.generateToken(user.getUsername());
         log.info("token :: {}", token);
 
-        return ApiResponseFactory.ok(Map.of("token", token));
+        return ApiResponseFactory.ok(new AuthResponse.Login(token, toUserSummary(user)));
+    }
+
+    @GetMapping("/me")
+    public ResponseEntity<ApiResponseTemplate<Object>> me(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null
+                || "anonymousUser".equals(authentication.getName())) {
+            ApiResponseTemplate<Object> body = new ApiResponseTemplate<>(
+                    null,
+                    HttpStatus.UNAUTHORIZED,
+                    "인증 사용자 정보를 확인할 수 없습니다.",
+                    false);
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
+        }
+
+        User user = userRepository.findByUsername(authentication.getName())
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
+
+        return ApiResponseFactory.ok(toUserSummary(user));
+    }
+
+    private AuthResponse.UserSummary toUserSummary(User user) {
+        return new AuthResponse.UserSummary(user.getId(), user.getUsername(),
+                UserNamePolicy.resolveName(user.getName(), user.getUsername()));
     }
 }
