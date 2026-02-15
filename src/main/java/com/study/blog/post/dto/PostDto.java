@@ -24,6 +24,8 @@ public class PostDto {
         public String content;
         public String deletedYn;
         public LocalDateTime createdAt;
+        public Long viewCount;
+        public Long likeCount;
         public List<AttachFileDto.Response> attachFiles;
     }
 }

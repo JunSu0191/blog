@@ -26,10 +26,14 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     // 특정 사용자의 댓글 조회
     List<Comment> findByUser_IdAndDeletedYn(Long userId, String deletedYn);
 
+    List<Comment> findByUser_IdAndDeletedYnOrderByCreatedAtDesc(Long userId, String deletedYn);
+
     // 삭제되지 않은 댓글 단건 조회
     Optional<Comment> findByIdAndDeletedYn(Long id, String deletedYn);
 
     // 특정 게시글의 댓글 수 조회
     @Query("SELECT COUNT(c) FROM Comment c WHERE c.post.id = :postId AND c.deletedYn = :deletedYn")
     Long countByPostIdAndDeletedYn(@Param("postId") Long postId, @Param("deletedYn") String deletedYn);
+
+    Long countByUser_IdAndDeletedYn(Long userId, String deletedYn);
 }

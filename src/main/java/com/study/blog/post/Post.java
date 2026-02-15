@@ -58,17 +58,21 @@ public class Post {
     private String content;
 
     @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
+    @Builder.Default
     private String deletedYn = "N";
 
     @Column(name = "created_at")
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
     // 조회수 (캐시용)
     @Column(name = "view_count")
+    @Builder.Default
     private Long viewCount = 0L;
 
     // 좋아요 수 (캐시용)
     @Column(name = "like_count")
+    @Builder.Default
     private Long likeCount = 0L;
 
     @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)

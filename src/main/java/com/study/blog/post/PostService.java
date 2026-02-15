@@ -106,6 +106,8 @@ public class PostService {
                 .content(req.content)
                 .deletedYn("N")
                 .createdAt(LocalDateTime.now())
+                .viewCount(0L)
+                .likeCount(0L)
                 .build();
         log.info("  Creating post: {}", post);
 
@@ -170,6 +172,8 @@ public class PostService {
         r.content = p.getContent();
         r.deletedYn = p.getDeletedYn();
         r.createdAt = p.getCreatedAt();
+        r.viewCount = p.getViewCount();
+        r.likeCount = p.getLikeCount();
         // attach files mapping
         r.attachFiles = p.getAttachFiles() != null ? p.getAttachFiles()
                 .stream()

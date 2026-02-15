@@ -75,6 +75,7 @@ public class CommentService {
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .likeCount(0L)
+                .dislikeCount(0L)
                 .build();
 
         Comment saved = commentRepository.save(comment);
@@ -145,6 +146,24 @@ public class CommentService {
     }
 
     /**
+     * 특정 사용자가 작성한 댓글 수 조회
+     */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public Long getCommentCountByUser(Long userId) {
+        return commentRepository.countByUser_IdAndDeletedYn(userId, "N");
+    }
+
+    /**
+     * 특정 사용자가 작성한 댓글 목록 조회
+     */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public List<CommentDto.Response> listByUser(Long userId) {
+        return commentRepository.findByUser_IdAndDeletedYnOrderByCreatedAtDesc(userId, "N").stream()
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * 댓글을 Response DTO로 변환 (대댓글 포함)
      */
     private CommentDto.Response toResponseWithReplies(Comment comment) {
@@ -169,6 +188,8 @@ public class CommentService {
         response.content = comment.getContent();
         response.deletedYn = comment.getDeletedYn();
         response.likeCount = comment.getLikeCount();
+        response.dislikeCount = comment.getDislikeCount();
+        response.myReaction = null;
         response.createdAt = comment.getCreatedAt();
         response.updatedAt = comment.getUpdatedAt();
         return response;

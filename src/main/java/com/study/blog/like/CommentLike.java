@@ -37,6 +37,23 @@ public class CommentLike {
     @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
     private String deletedYn;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "reaction_type", nullable = false, length = 10)
+    private CommentReactionType reactionType;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @PrePersist
+    void prePersist() {
+        if (deletedYn == null) {
+            deletedYn = "N";
+        }
+        if (reactionType == null) {
+            reactionType = CommentReactionType.LIKE;
+        }
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+    }
 }
