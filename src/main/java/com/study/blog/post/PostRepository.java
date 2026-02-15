@@ -15,6 +15,8 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     // 특정 사용자(userId)의 삭제되지 않은 게시글을 조회합니다 (속성 경로 user.id 사용)
     List<Post> findByUser_IdAndDeletedYn(Long userId, String deletedYn);
 
+    Long countByUser_IdAndDeletedYn(Long userId, String deletedYn);
+
     // (deletedYn = ? AND title LIKE ?) OR (deletedYn = ? AND content LIKE ?)
     // 형태로 생성되어 삭제 여부 조건이 제목/내용 검색 모두에 적용된다.
     Page<Post> findByDeletedYnAndTitleContainingIgnoreCaseOrDeletedYnAndContentContainingIgnoreCase(

@@ -30,6 +30,8 @@ public class CommentDto {
         public String content;
         public String deletedYn;
         public Long likeCount;
+        public Long dislikeCount;
+        public String myReaction;
         public LocalDateTime createdAt;
         public LocalDateTime updatedAt;
         public List<Response> replies; // 대댓글 목록

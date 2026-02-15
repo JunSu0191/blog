@@ -47,15 +47,24 @@ public class Comment {
     private String content;
 
     @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
+    @Builder.Default
     private String deletedYn = "N";
 
     @Column(name = "created_at")
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(name = "updated_at")
+    @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
 
     // 좋아요 수 (캐시용)
     @Column(name = "like_count")
+    @Builder.Default
     private Long likeCount = 0L;
+
+    // 싫어요 수 (캐시용)
+    @Column(name = "dislike_count")
+    @Builder.Default
+    private Long dislikeCount = 0L;
 }

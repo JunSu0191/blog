@@ -39,4 +39,14 @@ public class PostLike {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @PrePersist
+    void prePersist() {
+        if (deletedYn == null) {
+            deletedYn = "N";
+        }
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+    }
 }
