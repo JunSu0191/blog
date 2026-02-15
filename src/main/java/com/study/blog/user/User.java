@@ -34,4 +34,15 @@ public class User {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt = LocalDateTime.now();
+
+    public String getName() {
+        return UserNamePolicy.resolveName(this.name, this.username);
+    }
+
+    @PrePersist
+    @PreUpdate
+    private void applyNamePolicy() {
+        this.username = UserNamePolicy.normalizeUsername(this.username);
+        this.name = UserNamePolicy.resolveName(this.name, this.username);
+    }
 }
