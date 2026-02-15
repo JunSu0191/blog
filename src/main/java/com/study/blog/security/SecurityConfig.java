@@ -42,7 +42,7 @@ public class SecurityConfig {
         http.csrf().disable()
                 .cors().and()
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/h2-console/**", "/actuator/**",
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/h2-console/**", "/actuator/**",
                                 "/api/attach-files/uploads/**", "/api/attach-files/complete",
                                 "/upload/**", "/uploads/**", "/ws", "/ws/**", "/ws-sockjs/**",
                                 "/api/chat/**", "/api/notifications/**")
