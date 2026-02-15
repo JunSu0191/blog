@@ -71,7 +71,7 @@ public class ChatService {
             conversation = createGroupConversation(requester, req.getTitle(), req.getMemberIds());
         }
 
-        return toSummary(conversation, null);
+        return toSummary(conversation, null, requesterId);
     }
 
     public ChatDto.ConversationSummaryResponse createDirectConversation(Long requesterId, Long otherUserId) {
@@ -84,7 +84,11 @@ public class ChatService {
     @Transactional(readOnly = true)
     public List<ChatDto.ConversationSummaryResponse> listConversations(Long userId) {
         List<ConversationSummaryProjection> rows = conversationRepository.findConversationSummariesByUserId(userId);
-        return rows.stream().map(this::toSummaryFromProjection).toList();
+        Map<Long, List<ConversationMemberNameProjection>> memberNamesByConversationId =
+                loadMemberNamesForConversations(rows);
+        return rows.stream()
+                .map(row -> toSummaryFromProjection(row, userId, memberNamesByConversationId.get(row.getConversationId())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -346,11 +350,16 @@ public class ChatService {
         return r;
     }
 
-    private ChatDto.ConversationSummaryResponse toSummary(ChatConversation conversation, ChatMessage lastMessage) {
+    private ChatDto.ConversationSummaryResponse toSummary(ChatConversation conversation,
+                                                          ChatMessage lastMessage,
+                                                          Long currentUserId) {
         ChatDto.ConversationSummaryResponse r = new ChatDto.ConversationSummaryResponse();
         r.setConversationId(conversation.getId());
         r.setType(conversation.getType());
         r.setTitle(conversation.getTitle());
+        List<ConversationMemberNameProjection> memberNames =
+                conversationMemberRepository.findMemberNamesByConversationId(conversation.getId());
+        r.setDisplayTitle(resolveDisplayTitle(conversation.getType(), conversation.getTitle(), currentUserId, memberNames));
         r.setDirectKey(conversation.getDirectKey());
         r.setLastMessage(lastMessage != null ? toMessageResponse(lastMessage) : null);
         r.setLastActivityAt(lastMessage != null ? lastMessage.getCreatedAt() : conversation.getCreatedAt());
@@ -358,11 +367,14 @@ public class ChatService {
         return r;
     }
 
-    private ChatDto.ConversationSummaryResponse toSummaryFromProjection(ConversationSummaryProjection p) {
+    private ChatDto.ConversationSummaryResponse toSummaryFromProjection(ConversationSummaryProjection p,
+                                                                        Long currentUserId,
+                                                                        List<ConversationMemberNameProjection> memberNames) {
         ChatDto.ConversationSummaryResponse r = new ChatDto.ConversationSummaryResponse();
         r.setConversationId(p.getConversationId());
         r.setType(ConversationType.valueOf(p.getConversationType()));
         r.setTitle(p.getTitle());
+        r.setDisplayTitle(resolveDisplayTitle(r.getType(), p.getTitle(), currentUserId, memberNames));
         r.setDirectKey(p.getDirectKey());
         r.setUnreadMessageCount(p.getUnreadMessageCount() != null ? p.getUnreadMessageCount() : 0L);
 
@@ -379,6 +391,89 @@ public class ChatService {
             r.setLastActivityAt(null);
         }
         return r;
+    }
+
+    private Map<Long, List<ConversationMemberNameProjection>> loadMemberNamesForConversations(
+            List<ConversationSummaryProjection> rows) {
+        if (rows.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> conversationIds = rows.stream()
+                .map(ConversationSummaryProjection::getConversationId)
+                .distinct()
+                .toList();
+        return conversationMemberRepository.findMemberNamesByConversationIds(conversationIds).stream()
+                .collect(Collectors.groupingBy(
+                        ConversationMemberNameProjection::getConversationId,
+                        LinkedHashMap::new,
+                        Collectors.toList()));
+    }
+
+    private String resolveDisplayTitle(ConversationType type,
+                                       String rawTitle,
+                                       Long currentUserId,
+                                       List<ConversationMemberNameProjection> memberNames) {
+        if (type == ConversationType.DIRECT) {
+            return resolveDirectDisplayTitle(rawTitle, currentUserId, memberNames);
+        }
+        return resolveGroupDisplayTitle(rawTitle, currentUserId, memberNames);
+    }
+
+    private String resolveDirectDisplayTitle(String rawTitle,
+                                             Long currentUserId,
+                                             List<ConversationMemberNameProjection> memberNames) {
+        if (memberNames != null && !memberNames.isEmpty()) {
+            for (ConversationMemberNameProjection member : memberNames) {
+                if (!Objects.equals(member.getUserId(), currentUserId) && isNotBlank(member.getUserName())) {
+                    return member.getUserName();
+                }
+            }
+            for (ConversationMemberNameProjection member : memberNames) {
+                if (isNotBlank(member.getUserName())) {
+                    return member.getUserName();
+                }
+            }
+        }
+        if (isNotBlank(rawTitle)) {
+            return rawTitle;
+        }
+        return "알 수 없는 사용자";
+    }
+
+    private String resolveGroupDisplayTitle(String rawTitle,
+                                            Long currentUserId,
+                                            List<ConversationMemberNameProjection> memberNames) {
+        if (isNotBlank(rawTitle)) {
+            return rawTitle;
+        }
+
+        if (memberNames == null || memberNames.isEmpty()) {
+            return "이름 없는 단체방";
+        }
+
+        List<String> others = memberNames.stream()
+                .filter(member -> !Objects.equals(member.getUserId(), currentUserId))
+                .map(ConversationMemberNameProjection::getUserName)
+                .filter(this::isNotBlank)
+                .toList();
+        List<String> candidates = others.isEmpty()
+                ? memberNames.stream()
+                        .map(ConversationMemberNameProjection::getUserName)
+                        .filter(this::isNotBlank)
+                        .toList()
+                : others;
+
+        if (candidates.isEmpty()) {
+            return "이름 없는 단체방";
+        }
+        if (candidates.size() <= 2) {
+            return String.join(", ", candidates);
+        }
+        return candidates.get(0) + ", " + candidates.get(1) + " ...";
+    }
+
+    private boolean isNotBlank(String value) {
+        return value != null && !value.isBlank();
     }
 
     private void broadcastMessageCreated(Long conversationId, ChatDto.MessageResponse messageResponse) {
