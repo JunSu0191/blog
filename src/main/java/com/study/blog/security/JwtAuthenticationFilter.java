@@ -13,10 +13,16 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Set;
 
 @Slf4j
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Set<String> JWT_SKIP_PATHS = Set.of(
+            "/api/auth/login",
+            "/api/auth/register"
+    );
 
     private final JwtUtil jwtUtil;
     private final UserDetailsService userDetailsService;
@@ -35,7 +41,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         log.info("JwtAuthenticationFilter path = {}", path);
 
         // 공개 엔드포인트는 필터 스킵
-        if (path.startsWith("/api/auth/") || path.startsWith("/h2-console/")) {
+        if (shouldSkip(path)) {
             filterChain.doFilter(request, response);
             return;
         }
@@ -51,6 +57,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         try {
             // 토큰 검증 로직 (예: jwtUtil.validateToken 등)
             if (!jwtUtil.validateToken(token)) {
+                log.warn("JWT validation failed: path={}, reason=invalid_or_expired", path);
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 return;
             }
@@ -59,10 +66,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(auth);
         } catch (Exception ex) {
             // 검증 실패 시 401로 응답하거나 그냥 다음 필터로 넘겨서 최종적으로 인증 안된 상태로 처리
+            log.warn("JWT authentication failed: path={}, error={}: {}", path,
+                    ex.getClass().getSimpleName(), ex.getMessage());
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean shouldSkip(String path) {
+        return JWT_SKIP_PATHS.contains(path) || path.startsWith("/h2-console/");
     }
 }
