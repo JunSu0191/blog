@@ -25,6 +25,7 @@ public class ChatDto {
         private Long conversationId;
         private ConversationType type;
         private String title;
+        private String displayTitle;
         private String directKey;
         private MessageResponse lastMessage;
         private LocalDateTime lastActivityAt;
