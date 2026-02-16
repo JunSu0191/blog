@@ -47,6 +47,7 @@ public class SecurityConfig {
                                 "/upload/**", "/uploads/**", "/ws", "/ws/**", "/ws-sockjs/**",
                                 "/api/chat/**", "/api/notifications/**")
                         .permitAll()
+                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 

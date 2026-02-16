@@ -31,4 +31,6 @@ public interface NotificationRepository extends JpaRepository<Notification, Long
               and n.archivedAt is null
             """)
     int markAllAsRead(@Param("userId") Long userId, @Param("now") LocalDateTime now);
+
+    long countByArchivedAtIsNull();
 }
