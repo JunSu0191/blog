@@ -72,10 +72,8 @@ public class PostController {
     public ResponseEntity<ApiResponseTemplate<PostDto.Response>> create(@Validated @RequestBody PostDto.Request req) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String username = authentication.getName();
-        System.out.println("DEBUG: username = " + username);
-        Long userId = userRepository.findByUsername(username)
+        Long userId = userRepository.findByUsernameAndDeletedYn(username, "N")
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다.")).getId();
-        System.out.println("DEBUG: userId = " + userId);
 
         PostDto.Response resp = postService.createPost(req, userId);
         return ApiResponseFactory.created(URI.create("/api/posts/" + resp.id), resp);

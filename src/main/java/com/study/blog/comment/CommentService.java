@@ -46,6 +46,7 @@ public class CommentService {
     public List<CommentDto.Response> getCommentsByPostId(Long postId) {
         List<Comment> comments = commentRepository.findByPost_IdAndParentIsNullAndDeletedYnOrderByCreatedAtDesc(postId, "N");
         return comments.stream()
+                .filter(comment -> comment.getDeletedAt() == null)
                 .map(this::toResponseWithReplies)
                 .collect(Collectors.toList());
     }
@@ -72,6 +73,7 @@ public class CommentService {
                 .parent(parent)
                 .content(req.content)
                 .deletedYn("N")
+                .deletedAt(null)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .likeCount(0L)
@@ -132,6 +134,7 @@ public class CommentService {
         }
 
         comment.setDeletedYn("Y");
+        comment.setDeletedAt(LocalDateTime.now());
         comment.setUpdatedAt(LocalDateTime.now());
         commentRepository.save(comment);
 
@@ -159,6 +162,7 @@ public class CommentService {
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<CommentDto.Response> listByUser(Long userId) {
         return commentRepository.findByUser_IdAndDeletedYnOrderByCreatedAtDesc(userId, "N").stream()
+                .filter(comment -> comment.getDeletedAt() == null)
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }
@@ -170,6 +174,7 @@ public class CommentService {
         CommentDto.Response response = toResponse(comment);
         List<Comment> replies = commentRepository.findByParent_IdAndDeletedYnOrderByCreatedAtDesc(comment.getId(), "N");
         response.replies = replies.stream()
+                .filter(reply -> reply.getDeletedAt() == null)
                 .map(this::toResponse)
                 .collect(Collectors.toList());
         return response;

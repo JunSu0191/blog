@@ -105,6 +105,7 @@ public class PostService {
                 .title(req.title)
                 .content(req.content)
                 .deletedYn("N")
+                .deletedAt(null)
                 .createdAt(LocalDateTime.now())
                 .viewCount(0L)
                 .likeCount(0L)
@@ -120,7 +121,7 @@ public class PostService {
      */
     public Optional<PostDto.Response> getPost(Long id) {
         return postRepository.findById(id)
-                .filter(p -> "N".equals(p.getDeletedYn()))
+                .filter(p -> !p.isDeleted())
                 .map(this::toResponse);
     }
 
@@ -131,7 +132,7 @@ public class PostService {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Post not found: " + id));
 
-        if ("Y".equals(post.getDeletedYn())) {
+        if (post.isDeleted()) {
             throw new IllegalStateException("Cannot update deleted post: " + id);
         }
 
@@ -150,6 +151,7 @@ public class PostService {
         Post post = postRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Post not found: " + id));
         post.setDeletedYn("Y");
+        post.setDeletedAt(LocalDateTime.now());
         postRepository.save(post);
     }
 
@@ -160,6 +162,7 @@ public class PostService {
     public List<PostDto.Response> listByUser(Long userId) {
         return postRepository.findByUser_IdAndDeletedYn(userId, "N")
                 .stream()
+                .filter(post -> post.getDeletedAt() == null)
                 .map(this::toResponse)
                 .collect(Collectors.toList());
     }

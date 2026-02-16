@@ -47,7 +47,7 @@ public class CommentController {
     public ResponseEntity<ApiResponseTemplate<CommentDto.Response>> create(@Validated @RequestBody CommentDto.CreateRequest req) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String username = authentication.getName();
-        Long userId = userRepository.findByUsername(username)
+        Long userId = userRepository.findByUsernameAndDeletedYn(username, "N")
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다.")).getId();
 
         CommentDto.Response resp = commentService.createComment(req, userId);
@@ -62,7 +62,7 @@ public class CommentController {
             @Validated @RequestBody CommentDto.UpdateRequest req) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String username = authentication.getName();
-        Long userId = userRepository.findByUsername(username)
+        Long userId = userRepository.findByUsernameAndDeletedYn(username, "N")
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다.")).getId();
 
         CommentDto.Response resp = commentService.updateComment(id, req, userId);
@@ -76,7 +76,7 @@ public class CommentController {
     public ResponseEntity<ApiResponseTemplate<Void>> delete(@PathVariable Long id) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String username = authentication.getName();
-        Long userId = userRepository.findByUsername(username)
+        Long userId = userRepository.findByUsernameAndDeletedYn(username, "N")
                 .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다.")).getId();
 
         commentService.deleteComment(id, userId);

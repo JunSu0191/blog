@@ -17,6 +17,8 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     Long countByUser_IdAndDeletedYn(Long userId, String deletedYn);
 
+    long countByDeletedAtIsNull();
+
     // (deletedYn = ? AND title LIKE ?) OR (deletedYn = ? AND content LIKE ?)
     // 형태로 생성되어 삭제 여부 조건이 제목/내용 검색 모두에 적용된다.
     Page<Post> findByDeletedYnAndTitleContainingIgnoreCaseOrDeletedYnAndContentContainingIgnoreCase(
@@ -55,4 +57,18 @@ public interface PostRepository extends JpaRepository<Post, Long> {
                                          @Param("keyword") String keyword,
                                          @Param("cursorId") Long cursorId,
                                          Pageable pageable);
+
+    @Query("""
+            select p
+            from Post p
+            where (:keyword is null
+                   or lower(p.title) like lower(concat('%', :keyword, '%'))
+                   or p.content like concat('%', :keyword, '%'))
+              and (:deleted is null
+                   or (:deleted = true and p.deletedAt is not null)
+                   or (:deleted = false and p.deletedAt is null))
+            """)
+    Page<Post> searchAdminPosts(@Param("keyword") String keyword,
+                                @Param("deleted") Boolean deleted,
+                                Pageable pageable);
 }

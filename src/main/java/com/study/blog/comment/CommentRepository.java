@@ -36,4 +36,19 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     Long countByPostIdAndDeletedYn(@Param("postId") Long postId, @Param("deletedYn") String deletedYn);
 
     Long countByUser_IdAndDeletedYn(Long userId, String deletedYn);
+
+    long countByDeletedAtIsNull();
+
+    @Query("""
+            select c
+            from Comment c
+            where (:keyword is null
+                   or c.content like concat('%', :keyword, '%'))
+              and (:deleted is null
+                   or (:deleted = true and c.deletedAt is not null)
+                   or (:deleted = false and c.deletedAt is null))
+            """)
+    Page<Comment> searchAdminComments(@Param("keyword") String keyword,
+                                      @Param("deleted") Boolean deleted,
+                                      Pageable pageable);
 }
