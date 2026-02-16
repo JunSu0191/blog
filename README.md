@@ -62,6 +62,8 @@ cp .env.example .env
 - `JWT_SECRET`, `JWT_EXPIRATION_MS`
 - `APP_CORS_ALLOWED_ORIGINS`
 - `APP_AUTH_ALLOW_DEV_FALLBACK`, `APP_AUTH_DEV_USER_ID`
+- `APP_ADMIN_SEED_ENABLED`, `APP_ADMIN_USERNAME`, `APP_ADMIN_PASSWORD`, `APP_ADMIN_NAME`
+- `APP_ADMIN_MUST_CHANGE_PASSWORD`
 
 셸에 로드:
 
@@ -106,7 +108,7 @@ export $(grep -v '^#' .env | xargs)
 {
   "username": "junsu",
   "password": "1234",
-  "name": "준수"
+  "name": "홍길동"
 }
 ```
 
@@ -129,7 +131,7 @@ export $(grep -v '^#' .env | xargs)
   "user": {
     "id": 1,
     "username": "junsu",
-    "name": "준수"
+    "name": "홍길동"
   }
 }
 ```

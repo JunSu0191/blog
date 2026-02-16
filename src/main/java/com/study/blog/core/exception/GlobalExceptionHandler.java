@@ -30,14 +30,20 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponseTemplate<Object>> handleBadRequest(IllegalArgumentException ex) {
+        String message = (ex.getMessage() == null || ex.getMessage().isBlank())
+                ? "잘못된 요청입니다."
+                : ex.getMessage();
         return ResponseEntity.status(HttpStatus.BAD_REQUEST)
-                .body(new ApiResponseTemplate<>(null, HttpStatus.BAD_REQUEST, "잘못된 요청입니다.", false));
+                .body(new ApiResponseTemplate<>(null, HttpStatus.BAD_REQUEST, message, false));
     }
 
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiResponseTemplate<Object>> handleConflict(IllegalStateException ex) {
+        String message = (ex.getMessage() == null || ex.getMessage().isBlank())
+                ? "요청을 처리할 수 없습니다."
+                : ex.getMessage();
         return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(new ApiResponseTemplate<>(null, HttpStatus.CONFLICT, "요청을 처리할 수 없습니다.", false));
+                .body(new ApiResponseTemplate<>(null, HttpStatus.CONFLICT, message, false));
     }
 
     @ExceptionHandler(AuthenticationException.class)

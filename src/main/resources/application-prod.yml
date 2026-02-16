@@ -21,3 +21,11 @@ app:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS}
   auth:
     allow-dev-fallback: false
+  admin:
+    seed:
+      enabled: ${APP_ADMIN_SEED_ENABLED:false}
+      username: ${APP_ADMIN_USERNAME:}
+      password: ${APP_ADMIN_PASSWORD:}
+      name: ${APP_ADMIN_NAME:}
+      disallowed-password: ${APP_ADMIN_SEED_DISALLOWED_PASSWORD:}
+      must-change-password: ${APP_ADMIN_MUST_CHANGE_PASSWORD:true}

@@ -53,3 +53,11 @@ app:
   auth:
     allow-dev-fallback: ${APP_AUTH_ALLOW_DEV_FALLBACK:false}
     dev-user-id: ${APP_AUTH_DEV_USER_ID:1}
+  admin:
+    seed:
+      enabled: ${APP_ADMIN_SEED_ENABLED:false}
+      username: ${APP_ADMIN_USERNAME:}
+      password: ${APP_ADMIN_PASSWORD:}
+      name: ${APP_ADMIN_NAME:}
+      disallowed-password: ${APP_ADMIN_SEED_DISALLOWED_PASSWORD:}
+      must-change-password: ${APP_ADMIN_MUST_CHANGE_PASSWORD:true}
