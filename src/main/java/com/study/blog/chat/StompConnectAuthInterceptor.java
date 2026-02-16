@@ -3,6 +3,7 @@ package com.study.blog.chat;
 import com.study.blog.security.JwtUtil;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
+import com.study.blog.user.UserStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -107,7 +108,8 @@ public class StompConnectAuthInterceptor implements ChannelInterceptor {
             log.warn("stomp connect token username empty");
             return Optional.empty();
         }
-        Optional<User> user = userRepository.findByUsername(username);
+        Optional<User> user = userRepository.findByUsernameAndDeletedYn(username, "N")
+                .filter(found -> found.getStatus() == UserStatus.ACTIVE);
         if (user.isEmpty()) {
             log.warn("stomp connect user not found by username: {}", username);
         }
@@ -122,7 +124,9 @@ public class StompConnectAuthInterceptor implements ChannelInterceptor {
 
         try {
             Long userId = Long.parseLong(userIdHeader);
-            return userRepository.findById(userId);
+            return userRepository.findById(userId)
+                    .filter(user -> "N".equalsIgnoreCase(user.getDeletedYn()))
+                    .filter(user -> user.getStatus() == UserStatus.ACTIVE);
         } catch (NumberFormatException ex) {
             return Optional.empty();
         }
@@ -134,13 +138,16 @@ public class StompConnectAuthInterceptor implements ChannelInterceptor {
         }
 
         if (devUserId != null) {
-            Optional<User> byConfiguredId = userRepository.findById(devUserId);
+            Optional<User> byConfiguredId = userRepository.findById(devUserId)
+                    .filter(user -> "N".equalsIgnoreCase(user.getDeletedYn()))
+                    .filter(user -> user.getStatus() == UserStatus.ACTIVE);
             if (byConfiguredId.isPresent()) {
                 return byConfiguredId;
             }
         }
 
-        return userRepository.findFirstByDeletedYnOrderByIdAsc("N");
+        return userRepository.findFirstByDeletedYnOrderByIdAsc("N")
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE);
     }
 
     private String firstHeader(StompHeaderAccessor accessor, String key) {

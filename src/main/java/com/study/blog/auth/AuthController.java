@@ -5,6 +5,8 @@ import com.study.blog.core.response.ApiResponseTemplate;
 import com.study.blog.security.JwtUtil;
 import com.study.blog.user.User;
 import com.study.blog.user.UserNamePolicy;
+import com.study.blog.user.UserRole;
+import com.study.blog.user.UserStatus;
 import com.study.blog.user.UserRepository;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
@@ -50,6 +52,9 @@ public class AuthController {
                 .username(req.username())
                 .password(passwordEncoder.encode(req.password()))
                 .name(UserNamePolicy.resolveName(req.name(), req.username()))
+                .role(UserRole.USER)
+                .status(UserStatus.ACTIVE)
+                .mustChangePassword(false)
                 .createdAt(LocalDateTime.now())
                 .deletedYn("N")
                 .build();
@@ -69,7 +74,7 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
         }
 
-        User user = userRepository.findByUsername(req.username())
+        User user = userRepository.findByUsernameAndDeletedYn(req.username(), "N")
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
         String token = jwtUtil.generateToken(user.getUsername());
         log.info("token :: {}", token);
@@ -89,7 +94,7 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(body);
         }
 
-        User user = userRepository.findByUsername(authentication.getName())
+        User user = userRepository.findByUsernameAndDeletedYn(authentication.getName(), "N")
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
 
         return ApiResponseFactory.ok(toUserSummary(user));
@@ -97,6 +102,9 @@ public class AuthController {
 
     private AuthResponse.UserSummary toUserSummary(User user) {
         return new AuthResponse.UserSummary(user.getId(), user.getUsername(),
-                UserNamePolicy.resolveName(user.getName(), user.getUsername()));
+                UserNamePolicy.resolveName(user.getName(), user.getUsername()),
+                user.getRole(),
+                user.getStatus(),
+                user.getMustChangePassword());
     }
 }

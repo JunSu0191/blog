@@ -27,12 +27,29 @@ public class User {
     private String password;
 
     @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
+    @Builder.Default
     private String deletedYn = "N";
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private UserRole role = UserRole.USER;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private UserStatus status = UserStatus.ACTIVE;
+
+    @Column(name = "must_change_password", nullable = false)
+    @Builder.Default
+    private Boolean mustChangePassword = false;
+
     @Column(name = "created_at")
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
     @Column(name = "updated_at")
+    @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
 
     public String getName() {
@@ -44,5 +61,21 @@ public class User {
     private void applyNamePolicy() {
         this.username = UserNamePolicy.normalizeUsername(this.username);
         this.name = UserNamePolicy.resolveName(this.name, this.username);
+        if (this.deletedYn == null || this.deletedYn.isBlank()) {
+            this.deletedYn = "N";
+        }
+        if (this.role == null) {
+            this.role = UserRole.USER;
+        }
+        if (this.status == null) {
+            this.status = UserStatus.ACTIVE;
+        }
+        if (this.mustChangePassword == null) {
+            this.mustChangePassword = false;
+        }
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+        this.updatedAt = LocalDateTime.now();
     }
 }
