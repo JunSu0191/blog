@@ -56,7 +56,7 @@ class CommentReactionServiceTest {
                 .reactionType(CommentReactionType.LIKE)
                 .build();
 
-        when(commentRepository.findByIdAndDeletedYn(20L, "N")).thenReturn(Optional.of(comment));
+        when(commentRepository.findById(20L)).thenReturn(Optional.of(comment));
         when(commentLikeRepository.findByComment_IdAndUser_Id(20L, 1L)).thenReturn(Optional.of(existing));
         when(commentLikeRepository.save(any(CommentLike.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -82,7 +82,7 @@ class CommentReactionServiceTest {
                 .dislikeCount(0L)
                 .build();
 
-        when(commentRepository.findByIdAndDeletedYn(21L, "N")).thenReturn(Optional.of(comment));
+        when(commentRepository.findById(21L)).thenReturn(Optional.of(comment));
         when(commentLikeRepository.findByComment_IdAndUser_Id(21L, 1L)).thenReturn(Optional.empty());
         when(userRepository.findById(1L)).thenReturn(Optional.of(user));
         when(commentLikeRepository.save(any(CommentLike.class))).thenAnswer(invocation -> invocation.getArgument(0));

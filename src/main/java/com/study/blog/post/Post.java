@@ -61,6 +61,9 @@ public class Post {
     @Builder.Default
     private String deletedYn = "N";
 
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     @Column(name = "created_at")
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
@@ -77,4 +80,8 @@ public class Post {
 
     @OneToMany(mappedBy = "post", fetch = FetchType.LAZY)
     private List<AttachFile> attachFiles = new ArrayList<>();
+
+    public boolean isDeleted() {
+        return deletedAt != null || "Y".equalsIgnoreCase(deletedYn);
+    }
 }

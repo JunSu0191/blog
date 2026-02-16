@@ -88,7 +88,7 @@ public class PostLikeService {
     private Post getPostOrThrow(Long postId) {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new IllegalArgumentException("게시글을 찾을 수 없습니다: " + postId));
-        if ("Y".equals(post.getDeletedYn())) {
+        if (post.isDeleted()) {
             throw new IllegalArgumentException("삭제된 게시글에는 좋아요를 처리할 수 없습니다.");
         }
         return post;

@@ -50,6 +50,9 @@ public class Comment {
     @Builder.Default
     private String deletedYn = "N";
 
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     @Column(name = "created_at")
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
@@ -67,4 +70,8 @@ public class Comment {
     @Column(name = "dislike_count")
     @Builder.Default
     private Long dislikeCount = 0L;
+
+    public boolean isDeleted() {
+        return deletedAt != null || "Y".equalsIgnoreCase(deletedYn);
+    }
 }

@@ -81,8 +81,12 @@ public class CommentReactionService {
     }
 
     private Comment getCommentOrThrow(Long commentId) {
-        return commentRepository.findByIdAndDeletedYn(commentId, "N")
+        Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new IllegalArgumentException("댓글을 찾을 수 없습니다: " + commentId));
+        if (comment.isDeleted()) {
+            throw new IllegalArgumentException("삭제된 댓글에는 반응을 처리할 수 없습니다.");
+        }
+        return comment;
     }
 
     private CommentReactionType resolveReaction(CommentLike reaction) {
