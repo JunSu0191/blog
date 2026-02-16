@@ -45,81 +45,81 @@ class AuthControllerTest {
 
     @Test
     void registerShouldFallbackNameToUsernameWhenNameIsBlank() {
-        when(userRepository.existsByUsername("tlswnstn111")).thenReturn(false);
+        when(userRepository.existsByUsername("test")).thenReturn(false);
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
 
-        authController.register(new RegisterRequest("tlswnstn111", "pw", "   "));
+        authController.register(new RegisterRequest("test", "pw", "   "));
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
-        assertThat(captor.getValue().getName()).isEqualTo("tlswnstn111");
+        assertThat(captor.getValue().getName()).isEqualTo("test");
     }
 
     @Test
     void registerShouldFallbackNameToUsernameWhenNameIsNull() {
-        when(userRepository.existsByUsername("tlswnstn111")).thenReturn(false);
+        when(userRepository.existsByUsername("test")).thenReturn(false);
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
 
-        authController.register(new RegisterRequest("tlswnstn111", "pw", null));
+        authController.register(new RegisterRequest("test", "pw", null));
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
-        assertThat(captor.getValue().getName()).isEqualTo("tlswnstn111");
+        assertThat(captor.getValue().getName()).isEqualTo("test");
     }
 
     @Test
     void loginShouldReturnUserNameAsIsWhenPresent() {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(org.mockito.Mockito.mock(Authentication.class));
-        when(jwtUtil.generateToken("tlswnstn111")).thenReturn("jwt-token");
-        when(userRepository.findByUsername("tlswnstn111"))
+        when(jwtUtil.generateToken("test")).thenReturn("jwt-token");
+        when(userRepository.findByUsernameAndDeletedYn("test", "N"))
                 .thenReturn(Optional.of(User.builder()
                         .id(6L)
-                        .username("tlswnstn111")
-                        .name("준수")
+                        .username("test")
+                        .name("홍길동")
                         .password("encoded")
                         .deletedYn("N")
                         .build()));
 
         ResponseEntity<ApiResponseTemplate<Object>> response = authController.login(
-                new LoginRequest("tlswnstn111", "pw"));
+                new LoginRequest("test", "pw"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         AuthResponse.Login data = (AuthResponse.Login) response.getBody().getData();
         assertThat(data.token()).isEqualTo("jwt-token");
-        assertThat(data.user().name()).isEqualTo("준수");
+        assertThat(data.user().name()).isEqualTo("홍길동");
     }
 
     @Test
     void loginShouldFallbackNameToUsernameWhenNameMissing() {
         when(authenticationManager.authenticate(any(UsernamePasswordAuthenticationToken.class)))
                 .thenReturn(org.mockito.Mockito.mock(Authentication.class));
-        when(jwtUtil.generateToken("tlswnstn111")).thenReturn("jwt-token");
-        when(userRepository.findByUsername("tlswnstn111"))
+        when(jwtUtil.generateToken("test")).thenReturn("jwt-token");
+        when(userRepository.findByUsernameAndDeletedYn("test", "N"))
                 .thenReturn(Optional.of(User.builder()
                         .id(6L)
-                        .username("tlswnstn111")
+                        .username("test")
                         .name(null)
                         .password("encoded")
                         .deletedYn("N")
                         .build()));
 
         ResponseEntity<ApiResponseTemplate<Object>> response = authController.login(
-                new LoginRequest("tlswnstn111", "pw"));
+                new LoginRequest("test", "pw"));
 
         assertThat(response.getBody()).isNotNull();
         AuthResponse.Login data = (AuthResponse.Login) response.getBody().getData();
-        assertThat(data.user().name()).isEqualTo("tlswnstn111");
+        assertThat(data.user().name()).isEqualTo("test");
     }
 
     @Test
     void meShouldFallbackNameToUsernameWhenNameMissing() {
-        Authentication authentication = mockAuthentication("tlswnstn111");
-        when(userRepository.findByUsername("tlswnstn111"))
+        Authentication authentication = mockAuthentication("test");
+        when(userRepository.findByUsernameAndDeletedYn("test", "N"))
                 .thenReturn(Optional.of(User.builder()
                         .id(6L)
-                        .username("tlswnstn111")
+                        .username("test")
                         .name(" ")
                         .password("encoded")
                         .deletedYn("N")
@@ -130,7 +130,7 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         AuthResponse.UserSummary data = (AuthResponse.UserSummary) response.getBody().getData();
-        assertThat(data.name()).isEqualTo("tlswnstn111");
+        assertThat(data.name()).isEqualTo("test");
     }
 
     private Authentication mockAuthentication(String username) {

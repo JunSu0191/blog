@@ -2,6 +2,7 @@ package com.study.blog.core.security;
 
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
+import com.study.blog.user.UserStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
@@ -46,8 +47,11 @@ public class CurrentUserResolver {
         }
 
         // 2) REST 호출에서 X-User-Id 헤더를 받은 경우(개발용 fallback)
-        if (xUserId != null && userRepository.existsById(xUserId)) {
-            return xUserId;
+        if (xUserId != null) {
+            User activeUser = getActiveUserById(xUserId);
+            if (activeUser != null) {
+                return activeUser.getId();
+            }
         }
 
         // 3~4) 개발환경 fallback (설정된 ID -> 첫 활성 유저)
@@ -67,8 +71,11 @@ public class CurrentUserResolver {
         }
 
         // 2) WebSocket native header X-User-Id fallback
-        if (xUserId != null && userRepository.existsById(xUserId)) {
-            return xUserId;
+        if (xUserId != null) {
+            User activeUser = getActiveUserById(xUserId);
+            if (activeUser != null) {
+                return activeUser.getId();
+            }
         }
 
         // 3~4) 개발 fallback
@@ -104,15 +111,25 @@ public class CurrentUserResolver {
         try {
             // Principal 이름이 숫자 문자열인 경우를 먼저 허용 (예: "1")
             long parsed = Long.parseLong(principalName);
-            if (userRepository.existsById(parsed)) {
-                return parsed;
+            User activeUser = getActiveUserById(parsed);
+            if (activeUser != null) {
+                return activeUser.getId();
             }
         } catch (NumberFormatException ignored) {
             // ignore
         }
 
         User user = userRepository.findByUsername(principalName).orElse(null);
-        return user != null ? user.getId() : null;
+        if (user == null) {
+            return null;
+        }
+        if (!"N".equalsIgnoreCase(user.getDeletedYn())) {
+            return null;
+        }
+        if (user.getStatus() != UserStatus.ACTIVE) {
+            return null;
+        }
+        return user.getId();
     }
 
     private Long resolveDevFallbackUserId() {
@@ -120,12 +137,23 @@ public class CurrentUserResolver {
             return null;
         }
         // 설정값(app.auth.dev-user-id)이 실제 존재하면 우선 사용
-        if (devUserId != null && userRepository.existsById(devUserId)) {
-            return devUserId;
+        if (devUserId != null) {
+            User configured = getActiveUserById(devUserId);
+            if (configured != null) {
+                return configured.getId();
+            }
         }
         // 설정값이 없거나 잘못된 경우, 첫 활성 유저를 자동 사용
         return userRepository.findFirstByDeletedYnOrderByIdAsc("N")
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                 .map(User::getId)
+                .orElse(null);
+    }
+
+    private User getActiveUserById(Long userId) {
+        return userRepository.findById(userId)
+                .filter(user -> "N".equalsIgnoreCase(user.getDeletedYn()))
+                .filter(user -> user.getStatus() == UserStatus.ACTIVE)
                 .orElse(null);
     }
 }

@@ -14,7 +14,6 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetailsService;
 
 import java.io.IOException;
 import java.util.Collections;
@@ -31,14 +30,12 @@ class JwtAuthenticationFilterTest {
 
     @Mock
     private JwtUtil jwtUtil;
-    @Mock
-    private UserDetailsService userDetailsService;
 
     private JwtAuthenticationFilter filter;
 
     @BeforeEach
     void setUp() {
-        filter = new JwtAuthenticationFilter(jwtUtil, userDetailsService);
+        filter = new JwtAuthenticationFilter(jwtUtil);
     }
 
     @AfterEach
@@ -50,7 +47,7 @@ class JwtAuthenticationFilterTest {
     void shouldAuthenticateForAuthMePath() throws Exception {
         String token = "valid-token";
         UsernamePasswordAuthenticationToken authentication =
-                new UsernamePasswordAuthenticationToken("tlswnstn111", null, Collections.emptyList());
+                new UsernamePasswordAuthenticationToken("test", null, Collections.emptyList());
         when(jwtUtil.validateToken(token)).thenReturn(true);
         when(jwtUtil.getAuthentication(token)).thenReturn(authentication);
 
