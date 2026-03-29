@@ -59,6 +59,7 @@ class CommentServiceTest {
         CommentDto.Response response = commentService.createComment(req, 2L);
 
         assertThat(response.id).isEqualTo(55L);
+        assertThat(response.username).isEqualTo("u2");
         verify(notificationService).createPostCommentNotification(
                 1L,
                 2L,

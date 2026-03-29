@@ -1,25 +1,26 @@
-package com.study.blog.tag;
+package com.study.blog.series;
 
+import com.study.blog.user.User;
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.text.Normalizer;
 import java.time.LocalDateTime;
 import java.util.Locale;
 
-/**
- * 태그 JPA 엔티티입니다.
- */
 @Entity
-@Table(name = "tags", indexes = {
-        @Index(name = "idx_tags_name", columnList = "name"),
-        @Index(name = "idx_tags_deleted_yn", columnList = "deleted_yn")
+@Table(name = "post_series", indexes = {
+        @Index(name = "idx_post_series_owner_id", columnList = "owner_id"),
+        @Index(name = "idx_post_series_slug", columnList = "slug")
 })
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class Tag {
+public class PostSeries {
 
     private static final int MAX_SLUG_LENGTH = 220;
 
@@ -27,24 +28,24 @@ public class Tag {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 50)
-    private String name;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id", nullable = false)
+    private User owner;
+
+    @Column(nullable = false, length = 200)
+    private String title;
 
     @Column(nullable = false, unique = true, length = 220)
     private String slug;
 
-    @Column(length = 500)
+    @Column(length = 1000)
     private String description;
 
-    @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
-    @Builder.Default
-    private String deletedYn = "N";
-
-    @Column(name = "created_at")
+    @Column(name = "created_at", nullable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    @Column(name = "updated_at")
+    @Column(name = "updated_at", nullable = false)
     @Builder.Default
     private LocalDateTime updatedAt = LocalDateTime.now();
 
@@ -52,15 +53,12 @@ public class Tag {
     @PreUpdate
     void applyDefaults() {
         if (slug == null || slug.isBlank()) {
-            slug = slugify(name);
+            slug = slugify(title);
         } else {
             slug = slugify(slug);
         }
         if (slug.length() > MAX_SLUG_LENGTH) {
             slug = slug.substring(0, MAX_SLUG_LENGTH).replaceAll("-+$", "");
-        }
-        if (deletedYn == null || deletedYn.isBlank()) {
-            deletedYn = "N";
         }
         if (createdAt == null) {
             createdAt = LocalDateTime.now();

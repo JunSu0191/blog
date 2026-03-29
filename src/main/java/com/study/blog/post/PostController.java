@@ -2,125 +2,136 @@ package com.study.blog.post;
 
 import com.study.blog.core.response.ApiResponseFactory;
 import com.study.blog.core.response.ApiResponseTemplate;
-import com.study.blog.core.response.CursorResponse;
-import com.study.blog.post.dto.PostDto;
-import com.study.blog.user.UserRepository;
-
-import lombok.extern.slf4j.Slf4j;
-
+import com.study.blog.core.security.CurrentUserResolver;
+import com.study.blog.post.dto.PostContractDto;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
 import java.util.List;
 
-/**
- * 게시글 관련 간단한 REST 컨트롤러입니다.
- * - 비즈니스 로직은 `PostService`에 위임합니다.
- */
-@Slf4j
 @RestController
 @RequestMapping("/api/posts")
+@Validated
 public class PostController {
 
-    private final PostService postService;
-    private final UserRepository userRepository;
+    private final PostApplicationService postApplicationService;
+    private final PostDraftService postDraftService;
+    private final CurrentUserResolver currentUserResolver;
 
-    public PostController(PostService postService, UserRepository userRepository) {
-        this.postService = postService;
-        this.userRepository = userRepository;
+    public PostController(PostApplicationService postApplicationService,
+                          PostDraftService postDraftService,
+                          CurrentUserResolver currentUserResolver) {
+        this.postApplicationService = postApplicationService;
+        this.postDraftService = postDraftService;
+        this.currentUserResolver = currentUserResolver;
     }
 
-    /**
-     * 모든 게시물 조회
-     *
-     * mode=cursor(기본): 무한 스크롤용 커서 응답
-     * mode=page: 기존 페이지네이션 응답
-     */
-    @GetMapping
-    public ResponseEntity<?> list(
-            @RequestParam(defaultValue = "cursor") String mode,
-            @RequestParam(required = false) Long cursorId,
-            @RequestParam(defaultValue = "10") int size,
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
-            @RequestParam(required = false) String keyword) {
-
-        if ("page".equalsIgnoreCase(mode)) {
-            Page<PostDto.Response> resp = postService.listPosts(pageable, keyword);
-            return ApiResponseFactory.ok(resp);
-        }
-
-        if (!"cursor".equalsIgnoreCase(mode)) {
-            return ApiResponseFactory.badRequest("mode는 cursor 또는 page만 사용할 수 있습니다.");
-        }
-
-        CursorResponse<PostDto.Response> resp = postService.listPostsByCursor(cursorId, size, keyword);
-        return ApiResponseFactory.ok(resp);
+    @PostMapping("/drafts")
+    public ResponseEntity<ApiResponseTemplate<PostContractDto.DraftResponse>> createDraft(
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @Valid @RequestBody PostContractDto.DraftWriteRequest request) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        PostContractDto.DraftResponse response = postDraftService.createDraft(request, actorUserId);
+        return ApiResponseFactory.created(URI.create("/api/posts/drafts/" + response.id()), response);
     }
 
-    /**
-     * 새 게시글을 생성합니다.
-     */
-    @PostMapping
-    public ResponseEntity<ApiResponseTemplate<PostDto.Response>> create(@Validated @RequestBody PostDto.Request req) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        String username = authentication.getName();
-        Long userId = userRepository.findByUsernameAndDeletedYn(username, "N")
-                .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다.")).getId();
-
-        PostDto.Response resp = postService.createPost(req, userId);
-        return ApiResponseFactory.created(URI.create("/api/posts/" + resp.id), resp);
+    @PutMapping("/drafts/{draftId}")
+    public ResponseEntity<ApiResponseTemplate<PostContractDto.DraftResponse>> updateDraft(
+            @PathVariable Long draftId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @Valid @RequestBody PostContractDto.DraftWriteRequest request) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        PostContractDto.DraftResponse response = postDraftService.updateDraft(draftId, request, actorUserId);
+        return ApiResponseFactory.ok(response);
     }
 
-    /**
-     * id로 게시글을 조회합니다.
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponseTemplate<PostDto.Response>> get(@PathVariable Long id) {
-        return postService.getPost(id)
-                .map(ApiResponseFactory::ok)
-                .orElseGet(() -> ApiResponseFactory.badRequest("요청하신 게시글을 찾을 수 없습니다."));
+    @GetMapping("/drafts/{draftId}")
+    public ResponseEntity<ApiResponseTemplate<PostContractDto.DraftResponse>> getDraft(
+            @PathVariable Long draftId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        return ApiResponseFactory.ok(postDraftService.getDraft(draftId, actorUserId));
     }
 
-    /**
-     * 게시글을 수정합니다. 컨트롤러는 요청 수신 및 전달만 수행합니다.
-     */
-    @PutMapping("/{id}")
-    public ResponseEntity<ApiResponseTemplate<PostDto.Response>> update(@PathVariable Long id,
-            @Validated @RequestBody PostDto.Request req) {
-        PostDto.Response resp = postService.updatePost(id, req);
-        return ApiResponseFactory.ok(resp);
+    @GetMapping("/drafts")
+    public ResponseEntity<ApiResponseTemplate<com.study.blog.core.response.PageResponse<PostContractDto.DraftResponse>>> listDrafts(
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @PageableDefault(size = 10) Pageable pageable) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        Page<PostContractDto.DraftResponse> response = postDraftService.listDrafts(actorUserId, pageable);
+        return ApiResponseFactory.ok(response);
     }
 
-    /**
-     * 게시글을 소프트 삭제합니다.
-     */
-    @DeleteMapping("/{id}")
-    public ResponseEntity<ApiResponseTemplate<Void>> delete(@PathVariable Long id) {
-        postService.deletePost(id);
+    @DeleteMapping("/drafts/{draftId}")
+    public ResponseEntity<ApiResponseTemplate<Void>> deleteDraft(
+            @PathVariable Long draftId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        postDraftService.deleteDraft(draftId, actorUserId);
         return ApiResponseFactory.noContent();
     }
 
-    /**
-     * 사용자별 게시글 목록을 반환합니다.
-     */
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<ApiResponseTemplate<List<PostDto.Response>>> listByUser(@PathVariable Long userId) {
-        return ApiResponseFactory.ok(postService.listByUser(userId));
+    @PostMapping
+    public ResponseEntity<ApiResponseTemplate<PostContractDto.PostDetailResponse>> createPost(
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @Valid @RequestBody PostContractDto.PostWriteRequest request) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        PostContractDto.PostDetailResponse response = postApplicationService.createPost(request, actorUserId);
+        return ApiResponseFactory.created(URI.create("/api/posts/" + response.id()), response);
     }
 
-    /**
-     * 테스트용 - 예외 발생
-     */
-    @GetMapping("/test-error")
-    public ResponseEntity<ApiResponseTemplate<Object>> testError() {
-        throw new RuntimeException("테스트 예외");
+    @PutMapping("/{postId}")
+    public ResponseEntity<ApiResponseTemplate<PostContractDto.PostDetailResponse>> updatePost(
+            @PathVariable Long postId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @Valid @RequestBody PostContractDto.PostWriteRequest request) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        PostContractDto.PostDetailResponse response = postApplicationService.updatePost(postId, request, actorUserId);
+        return ApiResponseFactory.ok(response);
+    }
+
+    @DeleteMapping("/{postId}")
+    public ResponseEntity<ApiResponseTemplate<Void>> deletePost(
+            @PathVariable Long postId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId) {
+        Long actorUserId = currentUserResolver.resolveFromRest(xUserId);
+        postApplicationService.deletePost(postId, actorUserId);
+        return ApiResponseFactory.noContent();
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponseTemplate<com.study.blog.core.response.PageResponse<PostContractDto.PostListItem>>> listPosts(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String tag,
+            @RequestParam(defaultValue = "latest") String sort,
+            @PageableDefault(size = 10) Pageable pageable) {
+        Page<PostContractDto.PostListItem> response = postApplicationService.listPublishedPosts(
+                q,
+                categoryId,
+                tag,
+                sort,
+                pageable);
+        return ApiResponseFactory.ok(response);
+    }
+
+    @GetMapping("/{postId}")
+    public ResponseEntity<ApiResponseTemplate<PostContractDto.PostDetailResponse>> getPost(
+            @PathVariable Long postId) {
+        Long actorUserId = currentUserResolver.resolveFromSecurityContextOrNull();
+        return ApiResponseFactory.ok(postApplicationService.getPostById(postId, actorUserId));
+    }
+
+    @GetMapping("/{postId}/related")
+    public ResponseEntity<ApiResponseTemplate<List<PostContractDto.RelatedPostResponse>>> getRelatedPosts(
+            @PathVariable Long postId,
+            @RequestParam(defaultValue = "5") int limit) {
+        return ApiResponseFactory.ok(postApplicationService.getRelatedPosts(postId, limit));
     }
 }

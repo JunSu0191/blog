@@ -13,6 +13,8 @@ import java.util.List;
  */
 @Entity
 @Table(name = "categories", indexes = {
+        @Index(name = "idx_categories_name", columnList = "name"),
+        @Index(name = "idx_categories_slug", columnList = "slug"),
         @Index(name = "idx_categories_parent_id", columnList = "parent_id"),
         @Index(name = "idx_categories_deleted_yn", columnList = "deleted_yn")
 })
@@ -29,6 +31,9 @@ public class Category {
     @Column(nullable = false, unique = true, length = 100)
     private String name;
 
+    @Column(nullable = false, unique = true, length = 220)
+    private String slug;
+
     @Column(length = 500)
     private String description;
 
@@ -39,14 +44,43 @@ public class Category {
 
     // 자식 카테고리들
     @OneToMany(mappedBy = "parent", fetch = FetchType.LAZY)
+    @Builder.Default
     private List<Category> children = new ArrayList<>();
 
     @Column(name = "sort_order")
+    @Builder.Default
     private Integer sortOrder = 0;
 
     @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
+    @Builder.Default
     private String deletedYn = "N";
 
     @Column(name = "created_at")
+    @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    @Column(name = "updated_at")
+    @Builder.Default
+    private LocalDateTime updatedAt = LocalDateTime.now();
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (updatedAt == null) {
+            updatedAt = LocalDateTime.now();
+        }
+        if (deletedYn == null || deletedYn.isBlank()) {
+            deletedYn = "N";
+        }
+        if (sortOrder == null) {
+            sortOrder = 0;
+        }
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

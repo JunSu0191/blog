@@ -189,6 +189,7 @@ public class CommentService {
         response.postId = comment.getPost().getId();
         response.userId = comment.getUser().getId();
         response.name = comment.getUser().getName();
+        response.username = comment.getUser().getUsername();
         response.parentId = comment.getParent() != null ? comment.getParent().getId() : null;
         response.content = comment.getContent();
         response.deletedYn = comment.getDeletedYn();
