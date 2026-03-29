@@ -25,6 +25,40 @@
 | Realtime | WebSocket + STOMP |
 | API Docs | springdoc-openapi |
 
+## 아키텍처
+
+```mermaid
+flowchart LR
+  CLIENT[Client Apps]
+  REST[REST Controllers]
+  WS[WebSocket/STOMP Controllers]
+  SERVICE[Application Services]
+  SECURITY[Security and Auth]
+  DOMAIN[Domain and Repositories]
+  DB[(MySQL)]
+  FLYWAY[Flyway Migrations]
+  OAUTH[OAuth Providers]
+  FILES[Local Upload Storage]
+
+  CLIENT --> REST
+  CLIENT --> WS
+  REST --> SECURITY
+  WS --> SECURITY
+  SECURITY --> SERVICE
+  SERVICE --> DOMAIN
+  DOMAIN --> DB
+  FLYWAY --> DB
+  SERVICE --> OAUTH
+  SERVICE --> FILES
+```
+
+- `REST Controllers`가 인증, 게시글, 댓글, 마이페이지, 공개 블로그, 신고/추천 API를 처리합니다.
+- `WebSocket/STOMP Controllers`가 채팅 메시지, ACK, 미읽음 수, 알림 실시간 전파를 처리합니다.
+- `Security and Auth`가 JWT 인증, OAuth2 로그인, 인증번호 검증, 계정 복구 흐름을 담당합니다.
+- `Application Services`가 게시글 작성/수정, 채팅방 관리, 블로그 설정, 신고 처리 같은 도메인 로직을 조합합니다.
+- `Domain and Repositories`는 JPA 엔티티와 조회/저장 계층이며 최종적으로 `MySQL`에 접근합니다.
+- `Flyway Migrations`는 스키마 변경 이력을 관리하고, 업로드 파일은 로컬 저장소 경로와 메타데이터로 분리 관리합니다.
+
 ## 시작하기
 
 ### 1. 저장소 클론
