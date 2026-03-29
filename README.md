@@ -5,9 +5,12 @@
 - 게시글/댓글/첨부파일
 - 게시글 좋아요 + 댓글 좋아요/싫어요
 - 마이페이지 요약/프로필/내 활동 조회
+- 공개 블로그 프로필 조회(`/api/blogs/{username}`)
 - 채팅방/메시지/읽음/나가기 + 미읽음 실시간 동기화
 - 알림 실시간 전파
 - JWT 인증
+- OAuth2 소셜 로그인(Google/Kakao/Naver)
+- 휴대폰/이메일 인증 기반 회원가입 및 계정복구
 
 ## Tech Stack
 
@@ -64,11 +67,47 @@ cp .env.example .env
 - `APP_AUTH_ALLOW_DEV_FALLBACK`, `APP_AUTH_DEV_USER_ID`
 - `APP_ADMIN_SEED_ENABLED`, `APP_ADMIN_USERNAME`, `APP_ADMIN_PASSWORD`, `APP_ADMIN_NAME`
 - `APP_ADMIN_MUST_CHANGE_PASSWORD`
+- `APP_CATEGORY_SEED_ENABLED`, `APP_CATEGORY_SEED_OVERWRITE_EXISTING`
+- `APP_BLOG_SEED_ENABLED`, `APP_BLOG_SEED_OVERWRITE_EXISTING`
+- `APP_BLOG_SEED_AUTHOR_USERNAME`, `APP_BLOG_SEED_AUTHOR_PASSWORD`
+- `APP_OAUTH2_GOOGLE_CLIENT_ID`, `APP_OAUTH2_GOOGLE_CLIENT_SECRET`
+- `APP_OAUTH2_KAKAO_CLIENT_ID`, `APP_OAUTH2_KAKAO_CLIENT_SECRET`
+- `APP_OAUTH2_NAVER_CLIENT_ID`, `APP_OAUTH2_NAVER_CLIENT_SECRET`
+- `APP_OAUTH2_SUCCESS_REDIRECT_URI`, `APP_OAUTH2_FAILURE_REDIRECT_URI`
+- `APP_WEB_BASE_URL`, `APP_API_BASE_URL`
+- `APP_VERIFICATION_CODE_EXPIRE_SECONDS`, `APP_VERIFICATION_MAX_ATTEMPTS`
+- `APP_VERIFICATION_RESEND_COOLDOWN_SECONDS`, `APP_VERIFICATION_IP_RATE_LIMIT_PER_MINUTE`
+- `APP_VERIFICATION_HASH_SECRET`, `APP_VERIFICATION_MOCK_EXPOSE_CODE`
+- `APP_AUTH_RESET_TOKEN_EXPIRE_SECONDS`, `APP_AUTH_RESET_TOKEN_HASH_SECRET`
 
 셸에 로드:
 
 ```bash
 export $(grep -v '^#' .env | xargs)
+```
+
+블로그 카테고리 더미 데이터를 자동 생성하려면:
+
+```bash
+APP_CATEGORY_SEED_ENABLED=true ./gradlew bootRun
+```
+
+이미 있는 카테고리까지 시드 기준으로 갱신하려면:
+
+```bash
+APP_CATEGORY_SEED_ENABLED=true APP_CATEGORY_SEED_OVERWRITE_EXISTING=true ./gradlew bootRun
+```
+
+카테고리 + 작성자 + 태그 + 게시글 더미 데이터까지 한 번에 생성하려면:
+
+```bash
+APP_CATEGORY_SEED_ENABLED=true APP_BLOG_SEED_ENABLED=true APP_BLOG_SEED_AUTHOR_PASSWORD='<set-a-strong-password>' ./gradlew bootRun
+```
+
+기존 더미 데이터를 시드 기준으로 덮어쓰려면:
+
+```bash
+APP_CATEGORY_SEED_ENABLED=true APP_BLOG_SEED_ENABLED=true APP_BLOG_SEED_OVERWRITE_EXISTING=true APP_BLOG_SEED_AUTHOR_PASSWORD='<set-a-strong-password>' ./gradlew bootRun
 ```
 
 ### 5. 서버 실행
@@ -84,6 +123,17 @@ export $(grep -v '^#' .env | xargs)
 - Swagger UI: `http://localhost:8080/swagger-ui/index.html`
 - OpenAPI JSON: `http://localhost:8080/v3/api-docs`
 
+### 7. 로그 확인
+
+- 앱 공통 로그: `logs/application.log`
+- 업로드 전용 로그: `logs/tus-upload.log`
+
+예시:
+
+```bash
+tail -n 200 logs/application.log
+```
+
 ## 테스트
 
 ```bash
@@ -98,6 +148,19 @@ export $(grep -v '^#' .env | xargs)
 ./gradlew test --tests 'com.study.blog.like.*'
 ```
 
+## Flyway 장애 대응
+
+진단/복구 스크립트:
+
+```bash
+./scripts/flyway-troubleshoot.sh status
+./scripts/flyway-troubleshoot.sh locks
+```
+
+상세 가이드:
+
+- `docs/deployment/flyway-troubleshooting.md`
+
 ## 인증 빠른 흐름
 
 ### 1) 회원가입
@@ -107,8 +170,12 @@ export $(grep -v '^#' .env | xargs)
 ```json
 {
   "username": "<username>",
-  "password": "1234",
-  "name": "홍길동"
+  "password": "<password>",
+  "name": "<display-name>",
+  "nickname": "<nickname>",
+  "email": "<email>",
+  "phoneNumber": "<phone-number>",
+  "verificationId": 1
 }
 ```
 
@@ -119,7 +186,7 @@ export $(grep -v '^#' .env | xargs)
 ```json
 {
   "username": "<username>",
-  "password": "1234"
+  "password": "<password>"
 }
 ```
 
@@ -131,7 +198,7 @@ export $(grep -v '^#' .env | xargs)
   "user": {
     "id": 1,
     "username": "<username>",
-    "name": "홍길동"
+    "name": "<display-name>"
   }
 }
 ```
@@ -145,6 +212,47 @@ export $(grep -v '^#' .env | xargs)
 ```http
 Authorization: Bearer <JWT>
 ```
+
+### 4) 아이디/닉네임 중복확인
+
+- `GET /api/auth/check-username?username={username}`
+- `GET /api/auth/check-nickname?nickname={nickname}`
+
+### 5) 인증번호(OTP) 발송/검증
+
+- `POST /api/verifications/send` (`purpose`,`channel`,`target`)
+- `POST /api/verifications/confirm` (`verificationId`,`code`)
+
+로컬 개발에서만 `APP_VERIFICATION_MOCK_EXPOSE_CODE=true`로 켜고 응답 `debugCode`를 확인하세요. 공개/배포 환경에서는 `false`를 유지하는 편이 안전합니다.
+
+### 6) 계정복구
+
+- 아이디 찾기
+  - `POST /api/auth/find-id/request`
+  - `POST /api/auth/find-id/confirm`
+- 비밀번호 재설정
+  - `POST /api/auth/reset-password/request`
+  - `POST /api/auth/reset-password/confirm`
+  - `POST /api/auth/reset-password`
+
+## 소셜 로그인(OAuth2)
+
+### 제공자별 시작 URL
+
+- Google: `GET /oauth2/authorization/google`
+- Kakao: `GET /oauth2/authorization/kakao`
+- Naver: `GET /oauth2/authorization/naver`
+
+### 성공/실패 리다이렉트 규칙
+
+- 성공: `${APP_OAUTH2_SUCCESS_REDIRECT_URI}#token=<JWT>`
+- 실패: `${APP_OAUTH2_FAILURE_REDIRECT_URI}?error=<code>&message=<msg>`
+
+### DB 매핑
+
+- `oauth_accounts(provider, provider_user_id)`로 소셜 계정을 고유 식별
+- 신규 소셜 유저는 자동 회원가입 + `users`/`oauth_accounts` 동시 생성
+- 기존 소셜 유저는 `last_login_at` 갱신 후 기존 계정 재사용
 
 ### Name 정책
 
@@ -173,9 +281,19 @@ Authorization: Bearer <JWT>
 
 | Method | Path | 설명 | 인증 |
 |---|---|---|---|
+| GET | `/api/auth/check-username` | 아이디 중복확인 | X |
+| GET | `/api/auth/check-nickname` | 닉네임 중복확인 | X |
+| POST | `/api/verifications/send` | 인증번호 발송 | X |
+| POST | `/api/verifications/confirm` | 인증번호 검증 | X |
 | POST | `/api/auth/register` | 회원가입 | X |
 | POST | `/api/auth/login` | 로그인(JWT 발급) | X |
 | GET | `/api/auth/me` | 내 계정 조회 | O |
+| POST | `/api/auth/find-id/request` | 아이디 찾기 인증 요청 | X |
+| POST | `/api/auth/find-id/confirm` | 아이디 찾기 인증 확인 | X |
+| POST | `/api/auth/reset-password/request` | 비밀번호 재설정 인증 요청 | X |
+| POST | `/api/auth/reset-password/confirm` | 비밀번호 재설정 인증 확인 | X |
+| POST | `/api/auth/reset-password` | 비밀번호 재설정 완료 | X |
+| GET | `/oauth2/authorization/{provider}` | 소셜 로그인 시작 | X |
 
 ### Posts
 
@@ -215,6 +333,19 @@ Authorization: Bearer <JWT>
 | PUT | `/api/mypage/profile` | 프로필 수정 | O |
 | GET | `/api/mypage/posts` | 내가 쓴 게시글 | O |
 | GET | `/api/mypage/comments` | 내가 쓴 댓글 | O |
+
+### Blog Profile
+
+| Method | Path | 설명 | 인증 |
+|---|---|---|---|
+| GET | `/api/blogs/{username}` | 공개 블로그 프로필 + 작성 글 목록 + 블로그 설정 | X |
+
+### My Blog Settings
+
+| Method | Path | 설명 | 인증 |
+|---|---|---|---|
+| GET | `/api/me/blog/settings` | 내 블로그 공개 설정 조회 | O |
+| PUT | `/api/me/blog/settings` | 내 블로그 공개 설정 저장 | O |
 
 ### Chat (REST)
 
@@ -284,14 +415,6 @@ CONNECT 시 권장 헤더:
 ```http
 Authorization: Bearer <JWT>
 ```
-
-## DB 마이그레이션
-
-Flyway로 `src/main/resources/db/migration`의 스크립트를 순차 적용합니다.
-
-- `V16`: 좋아요/댓글 반응 확장
-- `V17`: 사용자 `name` null/blank 데이터 보정
-
 ## 프로젝트 구조
 
 ```text
@@ -308,13 +431,3 @@ src/main/java/com/study/blog
 ├── realtime
 └── core
 ```
-
-## 운영/배포 참고
-
-- HTTPS/Nginx 가이드: `docs/deployment/https-nginx.md`
-- CORS는 `APP_CORS_ALLOWED_ORIGINS`로 제어
-- `upload/`는 로컬 저장소 경로로 사용
-
----
-
-문의나 개선 제안은 Issue/PR로 언제든 환영합니다.
