@@ -11,6 +11,9 @@ public class OpenApiConfig {
     @Bean
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
-                .info(new Info().title("Blog API").version("v1"));
+                .info(new Info()
+                        .title("Blog API")
+                        .version("v1")
+                        .description("Blog Pause 콘텐츠 서비스 API 문서"));
     }
 }

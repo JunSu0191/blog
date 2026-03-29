@@ -4,6 +4,10 @@ import com.study.blog.core.response.ApiResponseTemplate;
 import com.study.blog.security.JwtUtil;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
+import com.study.blog.verification.VerificationChannel;
+import com.study.blog.verification.VerificationCode;
+import com.study.blog.verification.VerificationPurpose;
+import com.study.blog.verification.VerificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -17,6 +21,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,36 +40,77 @@ class AuthControllerTest {
     private AuthenticationManager authenticationManager;
     @Mock
     private JwtUtil jwtUtil;
+    @Mock
+    private VerificationService verificationService;
+    @Mock
+    private AccountRecoveryService accountRecoveryService;
 
     private AuthController authController;
 
     @BeforeEach
     void setUp() {
-        authController = new AuthController(userRepository, passwordEncoder, authenticationManager, jwtUtil);
+        authController = new AuthController(
+                userRepository,
+                passwordEncoder,
+                authenticationManager,
+                jwtUtil,
+                verificationService,
+                accountRecoveryService);
     }
 
     @Test
     void registerShouldFallbackNameToUsernameWhenNameIsBlank() {
         when(userRepository.existsByUsername("test")).thenReturn(false);
+        when(userRepository.existsByNickname("nick")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("01000000001")).thenReturn(false);
+        when(verificationService.normalizeTarget(VerificationChannel.SMS, "010-0000-0001")).thenReturn("01000000001");
+        when(verificationService.requireVerified(1L, VerificationPurpose.SIGNUP, VerificationChannel.SMS, "01000000001"))
+                .thenReturn(VerificationCode.builder()
+                        .id(1L)
+                        .purpose(VerificationPurpose.SIGNUP)
+                        .channel(VerificationChannel.SMS)
+                        .target("01000000001")
+                        .expiresAt(LocalDateTime.now().plusMinutes(5))
+                        .verifiedAt(LocalDateTime.now())
+                        .codeHash("hash")
+                        .build());
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
 
-        authController.register(new RegisterRequest("test", "pw", "   "));
+        authController.register(new RegisterRequest("test", "pw", "   ", "nick", null, "010-0000-0001", 1L));
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getName()).isEqualTo("test");
+        assertThat(captor.getValue().getNickname()).isEqualTo("nick");
+        assertThat(captor.getValue().getPhoneNumber()).isEqualTo("01000000001");
     }
 
     @Test
     void registerShouldFallbackNameToUsernameWhenNameIsNull() {
         when(userRepository.existsByUsername("test")).thenReturn(false);
+        when(userRepository.existsByNickname("nick")).thenReturn(false);
+        when(userRepository.existsByPhoneNumber("01000000001")).thenReturn(false);
+        when(verificationService.normalizeTarget(VerificationChannel.SMS, "01000000001")).thenReturn("01000000001");
+        when(verificationService.normalizeTarget(VerificationChannel.EMAIL, "sample.user@example.test")).thenReturn("sample.user@example.test");
+        when(userRepository.existsByEmail("sample.user@example.test")).thenReturn(false);
+        when(verificationService.requireVerified(1L, VerificationPurpose.SIGNUP, VerificationChannel.SMS, "01000000001"))
+                .thenReturn(VerificationCode.builder()
+                        .id(1L)
+                        .purpose(VerificationPurpose.SIGNUP)
+                        .channel(VerificationChannel.SMS)
+                        .target("01000000001")
+                        .expiresAt(LocalDateTime.now().plusMinutes(5))
+                        .verifiedAt(LocalDateTime.now())
+                        .codeHash("hash")
+                        .build());
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
 
-        authController.register(new RegisterRequest("test", "pw", null));
+        authController.register(new RegisterRequest("test", "pw", null, "nick", "sample.user@example.test", "01000000001", 1L));
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getName()).isEqualTo("test");
+        assertThat(captor.getValue().getEmail()).isEqualTo("sample.user@example.test");
     }
 
     @Test
@@ -76,7 +122,7 @@ class AuthControllerTest {
                 .thenReturn(Optional.of(User.builder()
                         .id(6L)
                         .username("test")
-                        .name("홍길동")
+                        .name("테스트사용자")
                         .password("encoded")
                         .deletedYn("N")
                         .build()));
@@ -88,7 +134,7 @@ class AuthControllerTest {
         assertThat(response.getBody()).isNotNull();
         AuthResponse.Login data = (AuthResponse.Login) response.getBody().getData();
         assertThat(data.token()).isEqualTo("jwt-token");
-        assertThat(data.user().name()).isEqualTo("홍길동");
+        assertThat(data.user().name()).isEqualTo("테스트사용자");
     }
 
     @Test
@@ -131,6 +177,15 @@ class AuthControllerTest {
         assertThat(response.getBody()).isNotNull();
         AuthResponse.UserSummary data = (AuthResponse.UserSummary) response.getBody().getData();
         assertThat(data.name()).isEqualTo("test");
+    }
+
+    @Test
+    void meShouldReturnNullWhenAnonymous() {
+        ResponseEntity<ApiResponseTemplate<Object>> response = authController.me(null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().getData()).isNull();
     }
 
     private Authentication mockAuthentication(String username) {

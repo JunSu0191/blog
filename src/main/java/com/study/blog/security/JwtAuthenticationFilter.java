@@ -20,7 +20,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final Set<String> JWT_SKIP_PATHS = Set.of(
             "/api/auth/login",
-            "/api/auth/register"
+            "/api/auth/register",
+            "/api/auth/check-username",
+            "/api/auth/check-nickname"
     );
 
     private final JwtUtil jwtUtil;
@@ -73,6 +75,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     private boolean shouldSkip(String path) {
-        return JWT_SKIP_PATHS.contains(path) || path.startsWith("/h2-console/");
+        return JWT_SKIP_PATHS.contains(path)
+                || path.startsWith("/h2-console/")
+                || path.startsWith("/oauth2/")
+                || path.startsWith("/login/oauth2/")
+                || path.startsWith("/api/auth/find-id/")
+                || path.startsWith("/api/auth/reset-password/")
+                || path.startsWith("/api/verifications/");
     }
 }

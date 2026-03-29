@@ -63,6 +63,10 @@ public class CurrentUserResolver {
         throw new AuthenticationCredentialsNotFoundException("인증 사용자 정보를 확인할 수 없습니다.");
     }
 
+    public Long resolveFromSecurityContextOrNull() {
+        return resolveFromAuthentication(SecurityContextHolder.getContext().getAuthentication());
+    }
+
     public Long resolveFromWebSocket(Principal principal, Long xUserId) {
         // 1) STOMP Principal로 식별 시도
         Long principalUserId = resolveFromPrincipal(principal);

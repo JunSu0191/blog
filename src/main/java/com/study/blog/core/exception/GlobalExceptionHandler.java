@@ -1,18 +1,23 @@
 package com.study.blog.core.exception;
 
 import com.study.blog.core.response.ApiResponseTemplate;
+import com.study.blog.post.PostErrorCode;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+@Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -58,11 +63,39 @@ public class GlobalExceptionHandler {
                 .body(new ApiResponseTemplate<>(null, HttpStatus.FORBIDDEN, "접근이 거부되었습니다.", false));
     }
 
+    @ExceptionHandler(CodedApiException.class)
+    public ResponseEntity<ApiResponseTemplate<Map<String, Object>>> handleCodedApiException(CodedApiException ex) {
+        HttpStatus status = ex.getStatus();
+        Map<String, Object> error = Map.of(
+                "code", ex.getCode(),
+                "message", ex.getMessage(),
+                "status", status.value());
+        return ResponseEntity.status(status)
+                .body(new ApiResponseTemplate<>(error, status, ex.getMessage(), false));
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponseTemplate<Map<String, Object>>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        HttpStatus status = HttpStatus.BAD_REQUEST;
+        String message = "업로드 가능한 최대 파일 크기를 초과했습니다.";
+        Map<String, Object> error = Map.of(
+                "code", PostErrorCode.UPLOAD_FAILED.code(),
+                "message", message,
+                "status", status.value());
+        return ResponseEntity.status(status)
+                .body(new ApiResponseTemplate<>(error, status, message, false));
+    }
+
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<ApiResponseTemplate<Object>> handleAll(Exception ex) {
-        System.out.println("GlobalExceptionHandler.handleAll called: " + ex.getClass().getName() + " - " + ex.getMessage());
-        ex.printStackTrace();
+    public ResponseEntity<ApiResponseTemplate<Map<String, Object>>> handleAll(Exception ex) {
+        log.error("Unhandled exception: {}", ex.getMessage(), ex);
+        HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
+        String message = "서버에서 오류가 발생했습니다.";
+        Map<String, Object> error = Map.of(
+                "code", PostErrorCode.GENERIC_SERVER_ERROR.code(),
+                "message", message,
+                "status", status.value());
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ApiResponseTemplate<>(null, HttpStatus.INTERNAL_SERVER_ERROR, "서버에서 오류가 발생했습니다.", false));
+                .body(new ApiResponseTemplate<>(error, status, message, false));
     }
 }

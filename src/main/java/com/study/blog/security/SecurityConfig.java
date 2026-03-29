@@ -1,6 +1,9 @@
 package com.study.blog.security;
 
 import com.study.blog.config.AllowedOriginsProvider;
+import com.study.blog.oauth.CustomOAuth2UserService;
+import com.study.blog.oauth.OAuth2AuthenticationFailureHandler;
+import com.study.blog.oauth.OAuth2AuthenticationSuccessHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.cors.CorsConfiguration;
@@ -18,6 +21,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.HttpMethod;
 import java.util.List;
 
 @Configuration
@@ -38,18 +43,48 @@ public class SecurityConfig {
     }
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                                   CustomOAuth2UserService customOAuth2UserService,
+                                                   OAuth2AuthenticationSuccessHandler oauth2SuccessHandler,
+                                                   OAuth2AuthenticationFailureHandler oauth2FailureHandler) throws Exception {
         http.csrf().disable()
                 .cors().and()
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/login", "/api/auth/register", "/h2-console/**", "/actuator/**",
+                        .requestMatchers("/api/auth/login", "/api/auth/register",
+                                "/api/auth/check-username", "/api/auth/check-nickname",
+                                "/api/auth/find-id/**", "/api/auth/reset-password/**",
+                                "/api/auth/me",
+                                "/api/verifications/**",
+                                "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
+                                "/h2-console/**", "/actuator/**",
                                 "/api/attach-files/uploads/**", "/api/attach-files/complete",
                                 "/upload/**", "/uploads/**", "/ws", "/ws/**", "/ws-sockjs/**",
-                                "/api/chat/**", "/api/notifications/**")
+                                "/api/chat/**", "/api/chats/**", "/api/friends/**", "/api/notifications/**",
+                                "/api/blogs/**",
+                                "/oauth2/**", "/login/oauth2/**")
                         .permitAll()
+                        .requestMatchers("/api/posts/drafts/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/posts", "/api/posts/*", "/api/posts/*/related")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/categories", "/api/categories/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/comments/posts/*").permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/v1/posts/slug/check",
+                                "/api/v1/tags", "/api/v1/tags/*", "/api/v1/tags/*/posts",
+                                "/api/v1/categories/*", "/api/v1/categories/*/posts",
+                                "/api/v1/search", "/api/v1/search/*",
+                                "/api/v1/series", "/api/v1/series/*")
+                        .permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
-                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+                .sessionManagement(sess -> sess.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(
+                        (request, response, authException) -> response.sendError(HttpServletResponse.SC_UNAUTHORIZED)))
+                .oauth2Login(oauth2 -> oauth2
+                        .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
+                        .successHandler(oauth2SuccessHandler)
+                        .failureHandler(oauth2FailureHandler));
 
         http.addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 

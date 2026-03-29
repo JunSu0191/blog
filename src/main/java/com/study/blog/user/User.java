@@ -23,8 +23,23 @@ public class User {
     @Column(nullable = false, length = 100)
     private String name;
 
+    @Column(nullable = false, length = 50)
+    private String nickname;
+
     @Column(nullable = false)
     private String password;
+
+    @Column(length = 255)
+    private String email;
+
+    @Column(name = "phone_number", length = 20)
+    private String phoneNumber;
+
+    @Column(name = "phone_verified_at")
+    private LocalDateTime phoneVerifiedAt;
+
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
 
     @Column(name = "deleted_yn", columnDefinition = "CHAR(1)")
     @Builder.Default
@@ -61,6 +76,12 @@ public class User {
     private void applyNamePolicy() {
         this.username = UserNamePolicy.normalizeUsername(this.username);
         this.name = UserNamePolicy.resolveName(this.name, this.username);
+        this.nickname = normalizeNullable(this.nickname);
+        if (this.nickname == null) {
+            this.nickname = this.username;
+        }
+        this.email = normalizeNullable(this.email);
+        this.phoneNumber = normalizeNullable(this.phoneNumber);
         if (this.deletedYn == null || this.deletedYn.isBlank()) {
             this.deletedYn = "N";
         }
@@ -77,5 +98,13 @@ public class User {
             this.createdAt = LocalDateTime.now();
         }
         this.updatedAt = LocalDateTime.now();
+    }
+
+    private String normalizeNullable(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }
