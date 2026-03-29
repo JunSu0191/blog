@@ -32,27 +32,70 @@ spring:
         default-page-size: 10
         max-page-size: 100
         one-indexed-parameters: false
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${APP_OAUTH2_GOOGLE_CLIENT_ID:dummy-google-client-id}
+            client-secret: ${APP_OAUTH2_GOOGLE_CLIENT_SECRET:dummy-google-client-secret}
+            scope: profile,email
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+          kakao:
+            client-id: ${APP_OAUTH2_KAKAO_CLIENT_ID:dummy-kakao-client-id}
+            client-secret: ${APP_OAUTH2_KAKAO_CLIENT_SECRET:dummy-kakao-client-secret}
+            provider: kakao
+            client-authentication-method: client_secret_post
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            client-name: Kakao
+            scope: profile_nickname
+          naver:
+            client-id: ${APP_OAUTH2_NAVER_CLIENT_ID:dummy-naver-client-id}
+            client-secret: ${APP_OAUTH2_NAVER_CLIENT_SECRET:dummy-naver-client-secret}
+            provider: naver
+            client-authentication-method: client_secret_post
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            client-name: Naver
+            scope: name,email
+        provider:
+          kakao:
+            authorization-uri: https://kauth.kakao.com/oauth/authorize
+            token-uri: https://kauth.kakao.com/oauth/token
+            user-info-uri: https://kapi.kakao.com/v2/user/me
+            user-name-attribute: id
+          naver:
+            authorization-uri: https://nid.naver.com/oauth2.0/authorize
+            token-uri: https://nid.naver.com/oauth2.0/token
+            user-info-uri: https://openapi.naver.com/v1/nid/me
+            user-name-attribute: response
 
 server:
   forward-headers-strategy: framework
 
 logging:
   level:
-    org.flywaydb: DEBUG
+    org.flywaydb: ${APP_LOG_LEVEL_FLYWAY:INFO}
 
 jwt:
   secret: ${JWT_SECRET:change-this-jwt-secret-at-least-32-bytes}
   expiration-ms: ${JWT_EXPIRATION_MS:3600000}
 
 app:
+  web-base-url: ${APP_WEB_BASE_URL:http://localhost:5173}
+  api-base-url: ${APP_API_BASE_URL:http://localhost:8080}
   public-base-url: ${APP_PUBLIC_BASE_URL:}
   upload:
     public-base-url: ${APP_UPLOAD_PUBLIC_BASE_URL:}
+    image-max-size-bytes: ${APP_UPLOAD_IMAGE_MAX_SIZE_BYTES:5242880}
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://192.168.*.*:5173,http://10.*.*.*:5173,http://172.*.*.*:5173}
   auth:
     allow-dev-fallback: ${APP_AUTH_ALLOW_DEV_FALLBACK:false}
     dev-user-id: ${APP_AUTH_DEV_USER_ID:1}
+    reset-token-expire-seconds: ${APP_AUTH_RESET_TOKEN_EXPIRE_SECONDS:900}
+    reset-token-hash-secret: ${APP_AUTH_RESET_TOKEN_HASH_SECRET:change-this-reset-token-secret}
   admin:
     seed:
       enabled: ${APP_ADMIN_SEED_ENABLED:false}
@@ -61,3 +104,23 @@ app:
       name: ${APP_ADMIN_NAME:}
       disallowed-password: ${APP_ADMIN_SEED_DISALLOWED_PASSWORD:}
       must-change-password: ${APP_ADMIN_MUST_CHANGE_PASSWORD:true}
+  category:
+    seed:
+      enabled: ${APP_CATEGORY_SEED_ENABLED:false}
+      overwrite-existing: ${APP_CATEGORY_SEED_OVERWRITE_EXISTING:false}
+  blog:
+    seed:
+      enabled: ${APP_BLOG_SEED_ENABLED:false}
+      overwrite-existing: ${APP_BLOG_SEED_OVERWRITE_EXISTING:false}
+      author-username: ${APP_BLOG_SEED_AUTHOR_USERNAME:sample_seed_author}
+      author-password: ${APP_BLOG_SEED_AUTHOR_PASSWORD:}
+  oauth2:
+    success-redirect-uri: ${APP_OAUTH2_SUCCESS_REDIRECT_URI:http://localhost:5173/auth/callback}
+    failure-redirect-uri: ${APP_OAUTH2_FAILURE_REDIRECT_URI:http://localhost:5173/auth/callback}
+  verification:
+    code-expire-seconds: ${APP_VERIFICATION_CODE_EXPIRE_SECONDS:300}
+    max-attempts: ${APP_VERIFICATION_MAX_ATTEMPTS:5}
+    resend-cooldown-seconds: ${APP_VERIFICATION_RESEND_COOLDOWN_SECONDS:60}
+    ip-rate-limit-per-minute: ${APP_VERIFICATION_IP_RATE_LIMIT_PER_MINUTE:30}
+    hash-secret: ${APP_VERIFICATION_HASH_SECRET:change-this-verification-hash-secret}
+    mock-expose-code: ${APP_VERIFICATION_MOCK_EXPOSE_CODE:false}
