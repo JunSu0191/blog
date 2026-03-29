@@ -12,4 +12,6 @@ public interface RealtimeEventPublisher {
     void publishConversationUnreadCount(Long userId, ChatDto.ConversationUnreadCountEvent event);
 
     void publishNotification(String username, Long userId, NotificationDto.Event event);
+
+    void publishUserEvent(String username, Long userId, String eventType, Object payload);
 }

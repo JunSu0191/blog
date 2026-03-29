@@ -25,6 +25,9 @@ public class MyPageDto {
         private Long userId;
         private String username;
         private String name;
+        private String nickname;
+        private String email;
+        private String phoneNumber;
         private ProfileResponse profile;
         private StatsResponse stats;
     }
@@ -32,6 +35,9 @@ public class MyPageDto {
     @Data
     public static class UpdateProfileRequest {
         private String name;
+        private String nickname;
+        private String email;
+        private String phoneNumber;
         private String displayName;
         private String bio;
         private String avatarUrl;

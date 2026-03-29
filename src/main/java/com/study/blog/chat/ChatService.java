@@ -1,8 +1,10 @@
 package com.study.blog.chat;
 
 import com.study.blog.chat.dto.ChatDto;
+import com.study.blog.chat.social.FriendshipService;
 import com.study.blog.notification.NotificationService;
 import com.study.blog.realtime.RealtimeEventPublisher;
+import com.study.blog.realtime.UserEventType;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -33,6 +35,7 @@ public class ChatService {
     private final ChatConversationMemberRepository conversationMemberRepository;
     private final ChatMessageRepository messageRepository;
     private final UserRepository userRepository;
+    private final FriendshipService friendshipService;
     private final RealtimeEventPublisher realtimeEventPublisher;
     private final NotificationService notificationService;
 
@@ -40,12 +43,14 @@ public class ChatService {
                        ChatConversationMemberRepository conversationMemberRepository,
                        ChatMessageRepository messageRepository,
                        UserRepository userRepository,
+                       FriendshipService friendshipService,
                        RealtimeEventPublisher realtimeEventPublisher,
                        NotificationService notificationService) {
         this.conversationRepository = conversationRepository;
         this.conversationMemberRepository = conversationMemberRepository;
         this.messageRepository = messageRepository;
         this.userRepository = userRepository;
+        this.friendshipService = friendshipService;
         this.realtimeEventPublisher = realtimeEventPublisher;
         this.notificationService = notificationService;
     }
@@ -62,6 +67,10 @@ public class ChatService {
             if (requesterId.equals(otherId)) {
                 throw new IllegalArgumentException("자기 자신과 DIRECT 대화를 생성할 수 없습니다.");
             }
+            if (!friendshipService.isFriends(requesterId, otherId)) {
+                throw new IllegalStateException("친구 관계에서만 DIRECT 대화를 시작할 수 있습니다.");
+            }
+            friendshipService.ensureNotBlocked(requesterId, otherId);
             // DIRECT는 항상 "작은ID:큰ID"로 키를 고정해야 중복 방 생성이 방지된다.
             String directKey = buildDirectKey(requesterId, otherId);
             conversation = conversationRepository.findByDirectKey(directKey)
@@ -83,7 +92,14 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public List<ChatDto.ConversationSummaryResponse> listConversations(Long userId) {
-        List<ConversationSummaryProjection> rows = conversationRepository.findConversationSummariesByUserId(userId);
+        return listConversations(userId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<ChatDto.ConversationSummaryResponse> listConversations(Long userId, ConversationType type) {
+        List<ConversationSummaryProjection> rows = conversationRepository.findConversationSummariesByUserId(
+                userId,
+                type != null ? type.name() : null);
         Map<Long, List<ConversationMemberNameProjection>> memberNamesByConversationId =
                 loadMemberNamesForConversations(rows);
         return rows.stream()
@@ -108,7 +124,7 @@ public class ChatService {
     @Transactional(readOnly = true)
     public List<ChatDto.MessageResponse> getMessages(Long userId, Long conversationId, Long cursorMessageId, int size) {
         // 보안: 대화방 멤버가 아니면 메시지 조회 불가
-        ensureMembership(conversationId, userId);
+        ChatConversationMember member = getActiveMemberOrThrow(conversationId, userId);
         int normalizedSize = Math.min(Math.max(size, 1), 100);
 
         LocalDateTime cursorCreatedAt = null;
@@ -123,6 +139,7 @@ public class ChatService {
 
         return messageRepository.findPageByConversationIdWithCursor(
                         conversationId,
+                        member.getLastClearedAt(),
                         cursorCreatedAt,
                         cursorId,
                         PageRequest.of(0, normalizedSize))
@@ -138,8 +155,7 @@ public class ChatService {
         ChatMessage lastRead = messageRepository.findByIdAndConversation_Id(lastReadMessageId, conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("lastReadMessageId가 유효하지 않습니다."));
 
-        ChatConversationMember member = conversationMemberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("대화방 멤버를 찾을 수 없습니다."));
+        ChatConversationMember member = getActiveMemberOrThrow(conversationId, userId);
 
         // conversation_member에 마지막 읽은 메시지 정보를 저장한다.
         member.setLastReadMessageId(lastRead.getId());
@@ -150,23 +166,78 @@ public class ChatService {
     }
 
     public void leaveConversation(Long userId, Long conversationId) {
-        // 보안: 대화방 멤버만 나가기 가능
-        ensureMembership(conversationId, userId);
-
         ChatConversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("대화방을 찾을 수 없습니다."));
+        if (conversation.getType() == ConversationType.DIRECT) {
+            throw new IllegalStateException("DIRECT 대화는 나가기를 지원하지 않습니다.");
+        }
+        leaveGroupConversation(userId, conversationId);
+    }
 
-        ChatConversationMember member = conversationMemberRepository.findByConversation_IdAndUser_Id(conversationId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("대화방 멤버를 찾을 수 없습니다."));
-        conversationMemberRepository.delete(member);
-
-        // 마지막 멤버가 나가면 대화방/메시지를 정리한다.
-        if (conversationMemberRepository.countByConversation_Id(conversationId) == 0) {
-            cleanupConversation(conversationId, conversation);
+    public void leaveGroupConversation(Long userId, Long groupId) {
+        ensureMembership(groupId, userId);
+        ChatConversation conversation = conversationRepository.findById(groupId)
+                .orElseThrow(() -> new IllegalArgumentException("대화방을 찾을 수 없습니다."));
+        if (conversation.getType() != ConversationType.GROUP) {
+            throw new IllegalStateException("GROUP 대화만 나가기를 지원합니다.");
         }
 
-        // 나가기 이후 본인 미읽음 카운트를 실시간으로 동기화한다.
-        runAfterCommitOrNow(() -> publishUnreadCountForUser(conversationId, userId));
+        ChatConversationMember member = getActiveMemberOrThrow(groupId, userId);
+        LocalDateTime leftAt = LocalDateTime.now();
+        List<Long> recipients = Optional.ofNullable(conversationMemberRepository.findUserIdsByConversationId(groupId))
+                .orElseGet(List::of).stream()
+                .filter(targetUserId -> !targetUserId.equals(userId))
+                .distinct()
+                .toList();
+
+        member.setLeftAt(leftAt);
+        member.setHiddenAt(leftAt);
+
+        runAfterCommitOrNow(() -> {
+            publishUnreadCountForUser(groupId, userId);
+            publishThreadUpdatedForUser(groupId, userId);
+            Map<String, Object> leftPayload = Map.of(
+                    "groupId", groupId,
+                    "userId", userId,
+                    "leftAt", leftAt);
+            Map<String, Object> membershipPayload = Map.of(
+                    "groupId", groupId,
+                    "userId", userId,
+                    "status", "LEFT",
+                    "leftAt", leftAt);
+            for (Long recipientId : recipients) {
+                publishUserEvent(recipientId, UserEventType.CHAT_GROUP_MEMBER_LEFT.value(), leftPayload);
+                publishUserEvent(recipientId, UserEventType.CHAT_GROUP_MEMBERSHIP_UPDATED.value(), membershipPayload);
+                publishThreadUpdatedForUser(groupId, recipientId);
+            }
+        });
+    }
+
+    public void hideConversation(Long userId, Long conversationId) {
+        ChatConversationMember member = getActiveMemberOrThrow(conversationId, userId);
+        member.setHiddenAt(LocalDateTime.now());
+        runAfterCommitOrNow(() -> {
+            publishUnreadCountForUser(conversationId, userId);
+            publishThreadUpdatedForUser(conversationId, userId);
+        });
+    }
+
+    public void unhideConversation(Long userId, Long conversationId) {
+        ChatConversationMember member = getActiveMemberOrThrow(conversationId, userId);
+        member.setHiddenAt(null);
+        runAfterCommitOrNow(() -> publishThreadUpdatedForUser(conversationId, userId));
+    }
+
+    public void clearMyConversationMessages(Long userId, Long conversationId) {
+        ChatConversationMember member = getActiveMemberOrThrow(conversationId, userId);
+        LocalDateTime now = LocalDateTime.now();
+        member.setLastClearedAt(now);
+        member.setLastReadAt(now);
+        member.setLastReadMessageId(null);
+        runAfterCommitOrNow(() -> {
+            publishUnreadCountForUser(conversationId, userId);
+            publishThreadUpdatedForUser(conversationId, userId);
+        });
     }
 
     public SendResult sendMessage(Long senderId, Long conversationId, ChatDto.SendMessageRequest req) {
@@ -182,6 +253,16 @@ public class ChatService {
         ChatConversation conversation = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException("대화방을 찾을 수 없습니다."));
         User sender = getUserOrThrow(senderId);
+        if (conversation.getType() == ConversationType.DIRECT) {
+            Long otherUserId = conversationMemberRepository.findByConversationId(conversationId).stream()
+                    .map(member -> member.getUser().getId())
+                    .filter(userId -> !userId.equals(senderId))
+                    .findFirst()
+                    .orElse(null);
+            if (otherUserId != null && friendshipService.isBlockedBetween(senderId, otherUserId)) {
+                throw new IllegalStateException("차단 상태에서는 메시지를 보낼 수 없습니다.");
+            }
+        }
 
         ChatMessage replyTo = null;
         if (req.getReplyToMessageId() != null) {
@@ -207,6 +288,7 @@ public class ChatService {
         runAfterCommitOrNow(() -> {
             broadcastMessageCreated(conversationId, messageResponse);
             broadcastUnreadCountForRecipients(conversationId, senderId, participants);
+            publishMessageCreatedToUserEvents(conversationId, messageResponse, participants);
             notificationService.createChatMessageNotifications(
                     conversationId,
                     senderId,
@@ -222,7 +304,7 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public boolean isMember(Long conversationId, Long userId) {
-        return conversationMemberRepository.existsByConversation_IdAndUser_Id(conversationId, userId);
+        return conversationMemberRepository.existsActiveByConversationIdAndUserId(conversationId, userId);
     }
 
     private ChatConversation createDirectConversation(User requester, String directKey, Long otherUserId) {
@@ -247,10 +329,20 @@ public class ChatService {
 
     private ChatConversation ensureDirectConversationMembers(ChatConversation conversation, Long requesterId, Long otherUserId) {
         List<Long> missingMemberIds = new ArrayList<>(2);
-        if (!conversationMemberRepository.existsByConversation_IdAndUser_Id(conversation.getId(), requesterId)) {
+        Optional<ChatConversationMember> requesterMember =
+                conversationMemberRepository.findByConversation_IdAndUser_Id(conversation.getId(), requesterId);
+        if (requesterMember.isPresent()) {
+            requesterMember.get().setLeftAt(null);
+            requesterMember.get().setHiddenAt(null);
+        } else {
             missingMemberIds.add(requesterId);
         }
-        if (!conversationMemberRepository.existsByConversation_IdAndUser_Id(conversation.getId(), otherUserId)) {
+
+        Optional<ChatConversationMember> otherMember =
+                conversationMemberRepository.findByConversation_IdAndUser_Id(conversation.getId(), otherUserId);
+        if (otherMember.isPresent()) {
+            otherMember.get().setLeftAt(null);
+        } else {
             missingMemberIds.add(otherUserId);
         }
         if (missingMemberIds.isEmpty()) {
@@ -295,17 +387,23 @@ public class ChatService {
                 .build());
 
         // 그룹 멤버 일괄 저장
-        saveMembers(conversation, members);
+        saveMembers(conversation, members, requester.getId());
         return conversation;
     }
 
     private void saveMembers(ChatConversation conversation, List<User> members) {
+        saveMembers(conversation, members, null);
+    }
+
+    private void saveMembers(ChatConversation conversation, List<User> members, Long ownerId) {
         List<ChatConversationMember> entities = members.stream()
                 .map(user -> ChatConversationMember.builder()
                         .id(new ChatConversationMemberId(conversation.getId(), user.getId()))
                         .conversation(conversation)
                         .user(user)
-                        .role("MEMBER")
+                        .role(ownerId != null && ownerId.equals(user.getId())
+                                ? ChatParticipantRole.OWNER
+                                : ChatParticipantRole.MEMBER)
                         .build())
                 .collect(Collectors.toList());
         conversationMemberRepository.saveAll(entities);
@@ -326,9 +424,14 @@ public class ChatService {
 
     private void ensureMembership(Long conversationId, Long userId) {
         // 대화방 멤버십 검증 실패 시 403
-        if (!conversationMemberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)) {
+        if (!conversationMemberRepository.existsActiveByConversationIdAndUserId(conversationId, userId)) {
             throw new org.springframework.security.access.AccessDeniedException("대화방 멤버만 접근할 수 있습니다.");
         }
+    }
+
+    private ChatConversationMember getActiveMemberOrThrow(Long conversationId, Long userId) {
+        return conversationMemberRepository.findActiveByConversationIdAndUserId(conversationId, userId)
+                .orElseThrow(() -> new org.springframework.security.access.AccessDeniedException("대화방 멤버만 접근할 수 있습니다."));
     }
 
     private User getUserOrThrow(Long userId) {
@@ -364,6 +467,7 @@ public class ChatService {
         r.setLastMessage(lastMessage != null ? toMessageResponse(lastMessage) : null);
         r.setLastActivityAt(lastMessage != null ? lastMessage.getCreatedAt() : conversation.getCreatedAt());
         r.setUnreadMessageCount(0L);
+        r.setHidden(false);
         return r;
     }
 
@@ -377,6 +481,7 @@ public class ChatService {
         r.setDisplayTitle(resolveDisplayTitle(r.getType(), p.getTitle(), currentUserId, memberNames));
         r.setDirectKey(p.getDirectKey());
         r.setUnreadMessageCount(p.getUnreadMessageCount() != null ? p.getUnreadMessageCount() : 0L);
+        r.setHidden(p.getHiddenAt() != null);
 
         if (p.getLastMessageId() != null) {
             ChatDto.MessageResponse m = new ChatDto.MessageResponse();
@@ -503,6 +608,34 @@ public class ChatService {
         event.setTotalUnreadMessageCount(totalUnreadMessageCount);
 
         realtimeEventPublisher.publishConversationUnreadCount(userId, event);
+    }
+
+    private void publishThreadUpdatedForUser(Long conversationId, Long userId) {
+        Map<String, Object> payload = Map.of(
+                "threadId", conversationId,
+                "unreadMessageCount", conversationMemberRepository.countUnreadMessages(conversationId, userId),
+                "totalUnreadMessageCount", conversationMemberRepository.countTotalUnreadMessages(userId));
+        publishUserEvent(userId, UserEventType.CHAT_THREAD_UPDATED.value(), payload);
+    }
+
+    private void publishMessageCreatedToUserEvents(Long conversationId,
+                                                   ChatDto.MessageResponse messageResponse,
+                                                   Collection<Long> participants) {
+        Map<String, Object> payload = Map.of(
+                "threadId", conversationId,
+                "message", messageResponse);
+        for (Long participantId : participants) {
+            publishUserEvent(participantId, UserEventType.CHAT_MESSAGE_CREATED.value(), payload);
+            publishThreadUpdatedForUser(conversationId, participantId);
+        }
+    }
+
+    private void publishUserEvent(Long userId, String eventType, Object payload) {
+        User user = userRepository.findById(userId).orElse(null);
+        if (user == null) {
+            return;
+        }
+        realtimeEventPublisher.publishUserEvent(user.getUsername(), user.getId(), eventType, payload);
     }
 
     private void runAfterCommitOrNow(Runnable runnable) {

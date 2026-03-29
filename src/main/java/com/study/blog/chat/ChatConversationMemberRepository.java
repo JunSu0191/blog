@@ -12,9 +12,40 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
 
     boolean existsByConversation_IdAndUser_Id(Long conversationId, Long userId);
 
+    @Query("""
+            select case when count(m) > 0 then true else false end
+            from ChatConversationMember m
+            where m.conversation.id = :conversationId
+              and m.user.id = :userId
+              and (m.conversation.type = com.study.blog.chat.ConversationType.DIRECT or m.leftAt is null)
+            """)
+    boolean existsActiveByConversationIdAndUserId(@Param("conversationId") Long conversationId,
+                                                  @Param("userId") Long userId);
+
     Optional<ChatConversationMember> findByConversation_IdAndUser_Id(Long conversationId, Long userId);
 
-    @Query("select m.user.id from ChatConversationMember m where m.conversation.id = :conversationId")
+    @Query("""
+            select m
+            from ChatConversationMember m
+            where m.conversation.id = :conversationId
+              and m.user.id = :userId
+              and (m.conversation.type = com.study.blog.chat.ConversationType.DIRECT or m.leftAt is null)
+            """)
+    Optional<ChatConversationMember> findActiveByConversationIdAndUserId(@Param("conversationId") Long conversationId,
+                                                                          @Param("userId") Long userId);
+
+    @Query("""
+            select m from ChatConversationMember m
+            where m.conversation.id = :conversationId
+            """)
+    List<ChatConversationMember> findByConversationId(@Param("conversationId") Long conversationId);
+
+    @Query("""
+            select m.user.id
+            from ChatConversationMember m
+            where m.conversation.id = :conversationId
+              and (m.conversation.type = com.study.blog.chat.ConversationType.DIRECT or m.leftAt is null)
+            """)
     List<Long> findUserIdsByConversationId(@Param("conversationId") Long conversationId);
 
     @Query("""
@@ -27,6 +58,7 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
                 end as userName
             from ChatConversationMember m
             where m.conversation.id in :conversationIds
+              and (m.conversation.type = com.study.blog.chat.ConversationType.DIRECT or m.leftAt is null)
             order by m.conversation.id asc, m.joinedAt asc, m.user.id asc
             """)
     List<ConversationMemberNameProjection> findMemberNamesByConversationIds(
@@ -42,6 +74,7 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
                 end as userName
             from ChatConversationMember m
             where m.conversation.id = :conversationId
+              and (m.conversation.type = com.study.blog.chat.ConversationType.DIRECT or m.leftAt is null)
             order by m.joinedAt asc, m.user.id asc
             """)
     List<ConversationMemberNameProjection> findMemberNamesByConversationId(@Param("conversationId") Long conversationId);
@@ -54,6 +87,8 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
              and cm.user_id = :userId
             where m.conversation_id = :conversationId
               and m.sender_id <> :userId
+              and m.deleted_at is null
+              and (cm.last_cleared_at is null or m.created_at > cm.last_cleared_at)
               and (cm.last_read_message_id is null or m.id > cm.last_read_message_id)
             """, nativeQuery = true)
     long countUnreadMessages(@Param("conversationId") Long conversationId, @Param("userId") Long userId);
@@ -64,7 +99,12 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
             join chat_conversation_member cm
               on cm.conversation_id = m.conversation_id
              and cm.user_id = :userId
+            join chat_conversation c
+              on c.id = cm.conversation_id
             where m.sender_id <> :userId
+              and m.deleted_at is null
+              and (cm.last_cleared_at is null or m.created_at > cm.last_cleared_at)
+              and (c.type = 'DIRECT' or cm.left_at is null)
               and (cm.last_read_message_id is null or m.id > cm.last_read_message_id)
             """, nativeQuery = true)
     long countTotalUnreadMessages(@Param("userId") Long userId);

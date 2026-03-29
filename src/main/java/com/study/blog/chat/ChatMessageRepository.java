@@ -18,6 +18,8 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     @Query("""
             select m from ChatMessage m
             where m.conversation.id = :conversationId
+              and m.deletedAt is null
+              and (:clearedAfter is null or m.createdAt > :clearedAfter)
               and (:cursorCreatedAt is null
                    or m.createdAt < :cursorCreatedAt
                    or (m.createdAt = :cursorCreatedAt and m.id < :cursorMessageId))
@@ -25,6 +27,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
             """)
     List<ChatMessage> findPageByConversationIdWithCursor(
             @Param("conversationId") Long conversationId,
+            @Param("clearedAfter") LocalDateTime clearedAfter,
             @Param("cursorCreatedAt") LocalDateTime cursorCreatedAt,
             @Param("cursorMessageId") Long cursorMessageId,
             org.springframework.data.domain.Pageable pageable);

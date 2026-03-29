@@ -30,6 +30,7 @@ public class ChatDto {
         private MessageResponse lastMessage;
         private LocalDateTime lastActivityAt;
         private Long unreadMessageCount;
+        private boolean hidden;
     }
 
     @Data

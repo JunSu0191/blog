@@ -40,4 +40,15 @@ public class StompRealtimeEventPublisher implements RealtimeEventPublisher {
         }
         messagingTemplate.convertAndSend("/topic/notifications/" + userId, event);
     }
+
+    @Override
+    public void publishUserEvent(String username, Long userId, String eventType, Object payload) {
+        UserRealtimeEvent event = new UserRealtimeEvent(eventType, payload);
+        if (username != null && !username.isBlank()) {
+            messagingTemplate.convertAndSendToUser(username, "/queue/events", event);
+        }
+        if (userId != null) {
+            messagingTemplate.convertAndSend("/topic/events/" + userId, event);
+        }
+    }
 }

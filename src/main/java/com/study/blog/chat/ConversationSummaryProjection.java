@@ -20,4 +20,6 @@ public interface ConversationSummaryProjection {
     Long getLastSenderId();
 
     Long getUnreadMessageCount();
+
+    LocalDateTime getHiddenAt();
 }

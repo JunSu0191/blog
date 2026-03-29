@@ -29,6 +29,8 @@ public class ChatStompSecurityInterceptor implements ChannelInterceptor {
     private static final Pattern APP_SEND_PATTERN = Pattern.compile("^/app/conversations/(\\d+)/send$");
     private static final Pattern TOPIC_SUBSCRIBE_PATTERN = Pattern.compile("^/topic/conversations/(\\d+)$");
     private static final Pattern TOPIC_UNREAD_SUBSCRIBE_PATTERN = Pattern.compile("^/topic/chat/unreads/(\\d+)$");
+    private static final Pattern TOPIC_EVENT_SUBSCRIBE_PATTERN = Pattern.compile("^/topic/events/(\\d+)$");
+    private static final Pattern TOPIC_NOTIFICATION_SUBSCRIBE_PATTERN = Pattern.compile("^/topic/notifications/(\\d+)$");
 
     private final CurrentUserResolver currentUserResolver;
     private final ChatConversationMemberRepository conversationMemberRepository;
@@ -57,7 +59,7 @@ public class ChatStompSecurityInterceptor implements ChannelInterceptor {
             return message;
         }
 
-        Long unreadTargetUserId = extractUnreadTargetUserId(command, destination);
+        Long unreadTargetUserId = extractSelfScopedTargetUserId(command, destination);
         if (unreadTargetUserId != null) {
             Long xUserId = parseLongHeader(accessor.getNativeHeader("X-User-Id"));
             Principal principal = accessor.getUser();
@@ -111,15 +113,20 @@ public class ChatStompSecurityInterceptor implements ChannelInterceptor {
         return Long.parseLong(matcher.group(1));
     }
 
-    private Long extractUnreadTargetUserId(StompCommand command, String destination) {
+    private Long extractSelfScopedTargetUserId(StompCommand command, String destination) {
         if (command != StompCommand.SUBSCRIBE) {
             return null;
         }
-        Matcher matcher = TOPIC_UNREAD_SUBSCRIBE_PATTERN.matcher(destination);
-        if (!matcher.matches()) {
-            return null;
+        for (Pattern pattern : List.of(
+                TOPIC_UNREAD_SUBSCRIBE_PATTERN,
+                TOPIC_EVENT_SUBSCRIBE_PATTERN,
+                TOPIC_NOTIFICATION_SUBSCRIBE_PATTERN)) {
+            Matcher matcher = pattern.matcher(destination);
+            if (matcher.matches()) {
+                return Long.parseLong(matcher.group(1));
+            }
         }
-        return Long.parseLong(matcher.group(1));
+        return null;
     }
 
     private Long parseLongHeader(List<String> values) {

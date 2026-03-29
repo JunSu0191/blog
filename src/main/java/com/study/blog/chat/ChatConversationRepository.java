@@ -26,19 +26,30 @@ public interface ChatConversationRepository extends JpaRepository<ChatConversati
                     FROM chat_message um
                     WHERE um.conversation_id = c.id
                       AND um.sender_id <> cm.user_id
+                      AND um.deleted_at IS NULL
+                      AND (cm.last_cleared_at IS NULL OR um.created_at > cm.last_cleared_at)
                       AND (cm.last_read_message_id IS NULL OR um.id > cm.last_read_message_id)
                 ) AS unreadMessageCount
+                ,
+                cm.hidden_at AS hiddenAt
             FROM chat_conversation_member cm
             JOIN chat_conversation c ON c.id = cm.conversation_id
             LEFT JOIN chat_message lm ON lm.id = (
                 SELECT m2.id
                 FROM chat_message m2
                 WHERE m2.conversation_id = c.id
+                  AND m2.deleted_at IS NULL
+                  AND (cm.last_cleared_at IS NULL OR m2.created_at > cm.last_cleared_at)
                 ORDER BY m2.created_at DESC, m2.id DESC
                 LIMIT 1
             )
             WHERE cm.user_id = :userId
+              AND cm.hidden_at IS NULL
+              AND (:conversationType IS NULL OR c.type = :conversationType)
+              AND (c.type = 'DIRECT' OR cm.left_at IS NULL)
             ORDER BY COALESCE(lm.created_at, c.created_at) DESC, COALESCE(lm.id, c.id) DESC
             """, nativeQuery = true)
-    List<ConversationSummaryProjection> findConversationSummariesByUserId(@Param("userId") Long userId);
+    List<ConversationSummaryProjection> findConversationSummariesByUserId(
+            @Param("userId") Long userId,
+            @Param("conversationType") String conversationType);
 }

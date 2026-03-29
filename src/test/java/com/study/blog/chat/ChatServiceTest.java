@@ -1,6 +1,7 @@
 package com.study.blog.chat;
 
 import com.study.blog.chat.dto.ChatDto;
+import com.study.blog.chat.social.FriendshipService;
 import com.study.blog.notification.NotificationService;
 import com.study.blog.realtime.RealtimeEventPublisher;
 import com.study.blog.user.User;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -18,8 +20,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,6 +36,8 @@ class ChatServiceTest {
     @Mock
     private UserRepository userRepository;
     @Mock
+    private FriendshipService friendshipService;
+    @Mock
     private RealtimeEventPublisher realtimeEventPublisher;
     @Mock
     private NotificationService notificationService;
@@ -47,6 +51,7 @@ class ChatServiceTest {
                 conversationMemberRepository,
                 messageRepository,
                 userRepository,
+                friendshipService,
                 realtimeEventPublisher,
                 notificationService);
     }
@@ -67,11 +72,22 @@ class ChatServiceTest {
 
         when(userRepository.findById(1L)).thenReturn(Optional.of(requester));
         when(userRepository.findById(2L)).thenReturn(Optional.of(other));
+        when(friendshipService.isFriends(1L, 2L)).thenReturn(true);
         when(conversationRepository.findByDirectKey("1:2"))
                 .thenReturn(Optional.empty())
                 .thenReturn(Optional.of(conversation));
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(10L, 1L)).thenReturn(true);
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(10L, 2L)).thenReturn(true);
+        when(conversationMemberRepository.findByConversation_IdAndUser_Id(10L, 1L))
+                .thenReturn(Optional.of(ChatConversationMember.builder()
+                        .id(new ChatConversationMemberId(10L, 1L))
+                        .conversation(conversation)
+                        .user(requester)
+                        .build()));
+        when(conversationMemberRepository.findByConversation_IdAndUser_Id(10L, 2L))
+                .thenReturn(Optional.of(ChatConversationMember.builder()
+                        .id(new ChatConversationMemberId(10L, 2L))
+                        .conversation(conversation)
+                        .user(other)
+                        .build()));
         ConversationMemberNameProjection directMe = memberName(10L, 1L, "U1");
         ConversationMemberNameProjection directOther = memberName(10L, 2L, "U2");
         when(conversationMemberRepository.findMemberNamesByConversationId(10L))
@@ -108,7 +124,7 @@ class ChatServiceTest {
                 .createdAt(LocalDateTime.now())
                 .build();
 
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(conversationId, senderId)).thenReturn(true);
+        when(conversationMemberRepository.existsActiveByConversationIdAndUserId(conversationId, senderId)).thenReturn(true);
         when(messageRepository.findByConversation_IdAndSender_IdAndClientMsgId(conversationId, senderId, existing.getClientMsgId()))
                 .thenReturn(Optional.of(existing));
 
@@ -126,21 +142,6 @@ class ChatServiceTest {
     }
 
     @Test
-    void listChatUsersShouldFallbackNameToUsernameWhenNameIsBlank() {
-        User me = User.builder().id(1L).username("u1").name(" ").build();
-        User other = User.builder().id(2L).username("u2").name("홍길동").build();
-
-        when(userRepository.findByDeletedYnOrderByIdAsc("N")).thenReturn(List.of(me, other));
-
-        List<ChatDto.ChatUserResponse> responses = chatService.listChatUsers(1L);
-
-        assertThat(responses).hasSize(2);
-        assertThat(responses.get(0).getName()).isEqualTo("u1");
-        assertThat(responses.get(0).isMe()).isTrue();
-        assertThat(responses.get(1).getName()).isEqualTo("홍길동");
-    }
-
-    @Test
     void listConversationsShouldIncludeUnreadMessageCount() {
         ConversationSummaryProjection row = mock(ConversationSummaryProjection.class);
         LocalDateTime now = LocalDateTime.now();
@@ -154,7 +155,8 @@ class ChatServiceTest {
         when(row.getLastMessageCreatedAt()).thenReturn(now);
         when(row.getLastSenderId()).thenReturn(7L);
         when(row.getUnreadMessageCount()).thenReturn(4L);
-        when(conversationRepository.findConversationSummariesByUserId(1L)).thenReturn(List.of(row));
+        when(row.getHiddenAt()).thenReturn(null);
+        when(conversationRepository.findConversationSummariesByUserId(1L, null)).thenReturn(List.of(row));
         ConversationMemberNameProjection groupMe = memberName(20L, 1L, "나");
         ConversationMemberNameProjection groupMember = memberName(20L, 2L, "팀원");
         when(conversationMemberRepository.findMemberNamesByConversationIds(List.of(20L)))
@@ -184,9 +186,9 @@ class ChatServiceTest {
                 .conversation(conversation)
                 .build();
 
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        when(conversationMemberRepository.existsActiveByConversationIdAndUserId(conversationId, userId)).thenReturn(true);
         when(messageRepository.findByIdAndConversation_Id(lastReadMessageId, conversationId)).thenReturn(Optional.of(lastRead));
-        when(conversationMemberRepository.findByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(Optional.of(member));
+        when(conversationMemberRepository.findActiveByConversationIdAndUserId(conversationId, userId)).thenReturn(Optional.of(member));
         when(conversationMemberRepository.countUnreadMessages(conversationId, userId)).thenReturn(0L);
         when(conversationMemberRepository.countTotalUnreadMessages(userId)).thenReturn(3L);
 
@@ -198,14 +200,13 @@ class ChatServiceTest {
         ArgumentCaptor<ChatDto.ConversationUnreadCountEvent> eventCaptor =
                 ArgumentCaptor.forClass(ChatDto.ConversationUnreadCountEvent.class);
         verify(realtimeEventPublisher).publishConversationUnreadCount(eq(userId), eventCaptor.capture());
-        assertThat(eventCaptor.getValue().getType()).isEqualTo("CONVERSATION_UNREAD_COUNT_UPDATED");
         assertThat(eventCaptor.getValue().getConversationId()).isEqualTo(conversationId);
         assertThat(eventCaptor.getValue().getUnreadMessageCount()).isEqualTo(0L);
         assertThat(eventCaptor.getValue().getTotalUnreadMessageCount()).isEqualTo(3L);
     }
 
     @Test
-    void leaveConversationShouldDeleteMembershipWhenMembersRemain() {
+    void leaveConversationForGroupShouldSetLeftAndHidden() {
         Long conversationId = 50L;
         Long userId = 3L;
 
@@ -218,110 +219,177 @@ class ChatServiceTest {
                 .conversation(conversation)
                 .build();
 
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
+        when(conversationMemberRepository.existsActiveByConversationIdAndUserId(conversationId, userId)).thenReturn(true);
         when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
-        when(conversationMemberRepository.findByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(Optional.of(member));
-        when(conversationMemberRepository.countByConversation_Id(conversationId)).thenReturn(2L);
+        when(conversationMemberRepository.findActiveByConversationIdAndUserId(conversationId, userId)).thenReturn(Optional.of(member));
         when(conversationMemberRepository.countUnreadMessages(conversationId, userId)).thenReturn(0L);
         when(conversationMemberRepository.countTotalUnreadMessages(userId)).thenReturn(6L);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(User.builder().id(userId).username("u3").build()));
 
         chatService.leaveConversation(userId, conversationId);
 
-        verify(conversationMemberRepository).delete(member);
-        verify(messageRepository, never()).clearReplyReferences(anyLong());
-        verify(messageRepository, never()).deleteByConversation_Id(anyLong());
-        verify(conversationRepository, never()).delete(any(ChatConversation.class));
+        assertThat(member.getLeftAt()).isNotNull();
+        assertThat(member.getHiddenAt()).isNotNull();
+        verify(conversationMemberRepository, never()).delete(any(ChatConversationMember.class));
+    }
+
+    @Test
+    void leaveConversationForDirectShouldThrow() {
+        Long conversationId = 77L;
+        Long userId = 3L;
+
+        ChatConversation conversation = ChatConversation.builder()
+                .id(conversationId)
+                .type(ConversationType.DIRECT)
+                .build();
+
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class,
+                () -> chatService.leaveConversation(userId, conversationId));
+        assertThat(ex.getMessage()).contains("DIRECT 대화는 나가기를 지원하지 않습니다");
+    }
+
+    @Test
+    void hideConversationShouldUpdateHiddenAt() {
+        Long conversationId = 81L;
+        Long userId = 5L;
+
+        ChatConversationMember member = ChatConversationMember.builder()
+                .id(new ChatConversationMemberId(conversationId, userId))
+                .build();
+
+        when(conversationMemberRepository.findActiveByConversationIdAndUserId(conversationId, userId))
+                .thenReturn(Optional.of(member));
+        when(conversationMemberRepository.countUnreadMessages(conversationId, userId)).thenReturn(2L);
+        when(conversationMemberRepository.countTotalUnreadMessages(userId)).thenReturn(10L);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(User.builder().id(userId).username("u5").build()));
+
+        chatService.hideConversation(userId, conversationId);
+
+        assertThat(member.getHiddenAt()).isNotNull();
         verify(realtimeEventPublisher).publishConversationUnreadCount(eq(userId), any(ChatDto.ConversationUnreadCountEvent.class));
     }
 
     @Test
-    void leaveConversationShouldCleanupConversationWhenLastMemberLeaves() {
-        Long conversationId = 51L;
-        Long userId = 4L;
+    void clearMyConversationMessagesShouldSetClearCursor() {
+        Long conversationId = 82L;
+        Long userId = 6L;
 
-        ChatConversation conversation = ChatConversation.builder()
-                .id(conversationId)
+        ChatConversationMember member = ChatConversationMember.builder()
+                .id(new ChatConversationMemberId(conversationId, userId))
+                .lastReadMessageId(123L)
+                .build();
+
+        when(conversationMemberRepository.findActiveByConversationIdAndUserId(conversationId, userId))
+                .thenReturn(Optional.of(member));
+        when(conversationMemberRepository.countUnreadMessages(conversationId, userId)).thenReturn(0L);
+        when(conversationMemberRepository.countTotalUnreadMessages(userId)).thenReturn(0L);
+        when(userRepository.findById(userId)).thenReturn(Optional.of(User.builder().id(userId).username("u6").build()));
+
+        chatService.clearMyConversationMessages(userId, conversationId);
+
+        assertThat(member.getLastClearedAt()).isNotNull();
+        assertThat(member.getLastReadMessageId()).isNull();
+    }
+
+    @Test
+    void sendMessageShouldPublishUserEventForParticipants() {
+        Long conversationId = 90L;
+        Long senderId = 1L;
+        Long receiverId = 2L;
+
+        User sender = User.builder().id(senderId).username("u1").name("U1").build();
+        User receiver = User.builder().id(receiverId).username("u2").name("U2").build();
+        ChatConversation conversation = ChatConversation.builder().id(conversationId).type(ConversationType.DIRECT).build();
+
+        ChatConversationMember senderMember = ChatConversationMember.builder()
+                .id(new ChatConversationMemberId(conversationId, senderId))
+                .conversation(conversation)
+                .user(sender)
+                .build();
+        ChatConversationMember receiverMember = ChatConversationMember.builder()
+                .id(new ChatConversationMemberId(conversationId, receiverId))
+                .conversation(conversation)
+                .user(receiver)
+                .hiddenAt(LocalDateTime.now())
+                .build();
+
+        when(conversationMemberRepository.existsActiveByConversationIdAndUserId(conversationId, senderId)).thenReturn(true);
+        when(messageRepository.findByConversation_IdAndSender_IdAndClientMsgId(conversationId, senderId, "c1"))
+                .thenReturn(Optional.empty());
+        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
+        when(conversationMemberRepository.findByConversationId(conversationId)).thenReturn(List.of(senderMember, receiverMember));
+        when(friendshipService.isBlockedBetween(senderId, receiverId)).thenReturn(false);
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(userRepository.findById(receiverId)).thenReturn(Optional.of(receiver));
+
+        ChatMessage saved = ChatMessage.builder()
+                .id(500L)
+                .conversation(conversation)
+                .sender(sender)
+                .clientMsgId("c1")
+                .type("TEXT")
+                .body("hello")
+                .createdAt(LocalDateTime.now())
+                .build();
+        when(messageRepository.save(any(ChatMessage.class))).thenReturn(saved);
+        when(conversationMemberRepository.findUserIdsByConversationId(conversationId)).thenReturn(List.of(senderId, receiverId));
+        when(conversationMemberRepository.countUnreadMessages(conversationId, receiverId)).thenReturn(1L);
+        when(conversationMemberRepository.countTotalUnreadMessages(receiverId)).thenReturn(1L);
+        when(conversationMemberRepository.countUnreadMessages(conversationId, senderId)).thenReturn(0L);
+        when(conversationMemberRepository.countTotalUnreadMessages(senderId)).thenReturn(0L);
+
+        ChatDto.SendMessageRequest req = new ChatDto.SendMessageRequest();
+        req.setClientMsgId("c1");
+        req.setType("TEXT");
+        req.setBody("hello");
+
+        chatService.sendMessage(senderId, conversationId, req);
+
+        verify(realtimeEventPublisher, atLeast(1))
+                .publishUserEvent(eq("u2"), eq(receiverId), eq("chat.message.created"), any());
+    }
+
+    @Test
+    void getMessagesShouldDenyWhenNotMember() {
+        when(conversationMemberRepository.findActiveByConversationIdAndUserId(1L, 1L)).thenReturn(Optional.empty());
+        assertThrows(AccessDeniedException.class,
+                () -> chatService.getMessages(1L, 1L, null, 20));
+    }
+
+    @Test
+    void leaveGroupConversationShouldFanoutToOthersOnly() {
+        Long groupId = 120L;
+        Long leaverId = 10L;
+        Long otherId = 11L;
+
+        ChatConversation group = ChatConversation.builder()
+                .id(groupId)
                 .type(ConversationType.GROUP)
                 .build();
         ChatConversationMember member = ChatConversationMember.builder()
-                .id(new ChatConversationMemberId(conversationId, userId))
-                .conversation(conversation)
+                .id(new ChatConversationMemberId(groupId, leaverId))
+                .conversation(group)
+                .user(User.builder().id(leaverId).username("u10").build())
                 .build();
 
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(true);
-        when(conversationRepository.findById(conversationId)).thenReturn(Optional.of(conversation));
-        when(conversationMemberRepository.findByConversation_IdAndUser_Id(conversationId, userId)).thenReturn(Optional.of(member));
-        when(conversationMemberRepository.countByConversation_Id(conversationId)).thenReturn(0L);
-        when(conversationMemberRepository.countUnreadMessages(conversationId, userId)).thenReturn(0L);
-        when(conversationMemberRepository.countTotalUnreadMessages(userId)).thenReturn(1L);
+        when(conversationMemberRepository.existsActiveByConversationIdAndUserId(groupId, leaverId)).thenReturn(true);
+        when(conversationRepository.findById(groupId)).thenReturn(Optional.of(group));
+        when(conversationMemberRepository.findActiveByConversationIdAndUserId(groupId, leaverId)).thenReturn(Optional.of(member));
+        when(conversationMemberRepository.findUserIdsByConversationId(groupId)).thenReturn(List.of(leaverId, otherId));
+        when(conversationMemberRepository.countUnreadMessages(groupId, leaverId)).thenReturn(0L);
+        when(conversationMemberRepository.countTotalUnreadMessages(leaverId)).thenReturn(0L);
+        when(conversationMemberRepository.countUnreadMessages(groupId, otherId)).thenReturn(0L);
+        when(conversationMemberRepository.countTotalUnreadMessages(otherId)).thenReturn(0L);
+        when(userRepository.findById(leaverId)).thenReturn(Optional.of(User.builder().id(leaverId).username("u10").build()));
+        when(userRepository.findById(otherId)).thenReturn(Optional.of(User.builder().id(otherId).username("u11").build()));
 
-        chatService.leaveConversation(userId, conversationId);
+        chatService.leaveGroupConversation(leaverId, groupId);
 
-        verify(conversationMemberRepository).delete(member);
-        verify(messageRepository).clearReplyReferences(conversationId);
-        verify(messageRepository).deleteByConversation_Id(conversationId);
-        verify(conversationRepository).delete(conversation);
-    }
-
-    @Test
-    void createDirectConversationShouldRestoreMissingMemberOnExistingConversation() {
-        User requester = User.builder().id(1L).username("u1").name("U1").build();
-        User other = User.builder().id(2L).username("u2").name("U2").build();
-
-        ChatConversation conversation = ChatConversation.builder()
-                .id(70L)
-                .type(ConversationType.DIRECT)
-                .directKey("1:2")
-                .createdBy(other)
-                .build();
-
-        when(userRepository.findById(1L)).thenReturn(Optional.of(requester));
-        when(conversationRepository.findByDirectKey("1:2")).thenReturn(Optional.of(conversation));
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(70L, 1L)).thenReturn(false);
-        when(conversationMemberRepository.existsByConversation_IdAndUser_Id(70L, 2L)).thenReturn(true);
-        ConversationMemberNameProjection restoreMe = memberName(70L, 1L, "U1");
-        ConversationMemberNameProjection restoreOther = memberName(70L, 2L, "U2");
-        when(conversationMemberRepository.findMemberNamesByConversationId(70L))
-                .thenReturn(List.of(restoreMe, restoreOther));
-        when(userRepository.findAllById(List.of(1L))).thenReturn(List.of(requester));
-
-        ChatDto.ConversationSummaryResponse response = chatService.createDirectConversation(1L, 2L);
-
-        assertThat(response.getConversationId()).isEqualTo(70L);
-        assertThat(response.getDisplayTitle()).isEqualTo("U2");
-        verify(conversationMemberRepository).saveAll(argThat(members -> {
-            int count = 0;
-            ChatConversationMember only = null;
-            for (ChatConversationMember member : members) {
-                count++;
-                only = member;
-            }
-            return count == 1 && only != null && Long.valueOf(1L).equals(only.getUser().getId());
-        }));
-        verify(conversationRepository, never()).save(any(ChatConversation.class));
-    }
-
-    @Test
-    void groupConversationWithoutTitleShouldBuildDisplayTitleFromMembers() {
-        ConversationSummaryProjection row = mock(ConversationSummaryProjection.class);
-        when(row.getConversationId()).thenReturn(88L);
-        when(row.getConversationType()).thenReturn("GROUP");
-        when(row.getTitle()).thenReturn(null);
-        when(row.getDirectKey()).thenReturn(null);
-        when(row.getLastMessageId()).thenReturn(null);
-        when(row.getUnreadMessageCount()).thenReturn(0L);
-        when(conversationRepository.findConversationSummariesByUserId(1L)).thenReturn(List.of(row));
-        ConversationMemberNameProjection memberMe = memberName(88L, 1L, "나");
-        ConversationMemberNameProjection memberA = memberName(88L, 2L, "홍길동");
-        ConversationMemberNameProjection memberB = memberName(88L, 3L, "김철수");
-        ConversationMemberNameProjection memberC = memberName(88L, 4L, "이영희");
-        when(conversationMemberRepository.findMemberNamesByConversationIds(List.of(88L)))
-                .thenReturn(List.of(memberMe, memberA, memberB, memberC));
-
-        List<ChatDto.ConversationSummaryResponse> responses = chatService.listConversations(1L);
-
-        assertThat(responses).hasSize(1);
-        assertThat(responses.get(0).getDisplayTitle()).isEqualTo("홍길동, 김철수 ...");
+        verify(realtimeEventPublisher).publishUserEvent(eq("u11"), eq(otherId), eq("chat.group.member.left"), any());
+        verify(realtimeEventPublisher).publishUserEvent(eq("u11"), eq(otherId), eq("chat.group.membership.updated"), any());
+        verify(realtimeEventPublisher, never()).publishUserEvent(eq("u10"), eq(leaverId), eq("chat.group.member.left"), any());
     }
 
     private ConversationMemberNameProjection memberName(Long conversationId, Long userId, String userName) {

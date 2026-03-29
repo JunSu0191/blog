@@ -57,6 +57,34 @@ public class MyPageService {
         if (req.getName() != null && !req.getName().isBlank()) {
             user.setName(req.getName().trim());
         }
+        if (req.getNickname() != null) {
+            String nickname = trimToNull(req.getNickname());
+            if (nickname != null && !nickname.equals(user.getNickname()) && userRepository.existsByNickname(nickname)) {
+                throw new IllegalArgumentException("이미 사용 중인 닉네임입니다.");
+            }
+            if (nickname != null) {
+                user.setNickname(nickname);
+            }
+        }
+        if (req.getEmail() != null) {
+            String email = trimToNull(req.getEmail());
+            String currentEmail = user.getEmail();
+            if (email != null && (currentEmail == null || !email.equalsIgnoreCase(currentEmail))
+                    && userRepository.existsByEmail(email)) {
+                throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
+            }
+            user.setEmail(email);
+            user.setEmailVerifiedAt(null);
+        }
+        if (req.getPhoneNumber() != null) {
+            String phoneNumber = normalizePhone(req.getPhoneNumber());
+            if (phoneNumber != null && !phoneNumber.equals(user.getPhoneNumber())
+                    && userRepository.existsByPhoneNumber(phoneNumber)) {
+                throw new IllegalArgumentException("이미 사용 중인 휴대폰 번호입니다.");
+            }
+            user.setPhoneNumber(phoneNumber);
+            user.setPhoneVerifiedAt(null);
+        }
         if (req.getDisplayName() != null) {
             profile.setDisplayName(trimToNull(req.getDisplayName()));
         }
@@ -98,6 +126,9 @@ public class MyPageService {
         response.setUserId(user.getId());
         response.setUsername(user.getUsername());
         response.setName(user.getName());
+        response.setNickname(user.getNickname());
+        response.setEmail(user.getEmail());
+        response.setPhoneNumber(user.getPhoneNumber());
 
         MyPageDto.ProfileResponse profileResponse = new MyPageDto.ProfileResponse();
         if (profile != null) {
@@ -124,6 +155,15 @@ public class MyPageService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizePhone(String value) {
+        String trimmed = trimToNull(value);
+        if (trimmed == null) {
+            return null;
+        }
+        String digits = trimmed.replaceAll("[^0-9+]", "");
+        return digits.isBlank() ? null : digits;
     }
 
     private long normalize(Long value) {
