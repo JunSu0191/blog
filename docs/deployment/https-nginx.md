@@ -23,6 +23,16 @@ APP_TUS_STORAGE_PATH=./upload/tus
 `APP_PUBLIC_BASE_URL`은 프록시 뒤에서 공용 URL 생성에 사용합니다.
 `APP_TUS_STORAGE_PATH`는 `tus` 업로드 중간 파일 저장 경로입니다.
 
+HTTPS 적용 후에는 아래 값을 모두 `https://blog-pause.com` 기준으로 맞춥니다.
+
+- `APP_PUBLIC_BASE_URL`
+- `APP_WEB_BASE_URL`
+- `APP_API_BASE_URL`
+- `APP_UPLOAD_PUBLIC_BASE_URL`
+- `APP_CORS_ALLOWED_ORIGINS`
+- `APP_OAUTH2_SUCCESS_REDIRECT_URI`
+- `APP_OAUTH2_FAILURE_REDIRECT_URI`
+
 ## 2. Nginx 설정
 
 정적 프론트는 Nginx가 직접 서빙하고, API와 WebSocket은 Spring Boot(`127.0.0.1:8080`)로 프록시합니다.
@@ -36,6 +46,16 @@ APP_TUS_STORAGE_PATH=./upload/tus
 server {
     listen 80;
     server_name blog-pause.com;
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name blog-pause.com;
+
+    ssl_certificate /etc/letsencrypt/live/blog-pause.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/blog-pause.com/privkey.pem;
 
     root /var/www/blog-front;
     index index.html;
@@ -104,12 +124,6 @@ server {
 }
 ```
 
-HTTPS 적용 시:
-
-- `443 ssl http2` 서버 블록 추가
-- `80`에서는 `https://$host$request_uri`로 리다이렉트
-- 인증서 경로는 `ssl_certificate`, `ssl_certificate_key`에 설정
-
 ## 3. Nginx 적용 명령
 
 ```bash
@@ -127,3 +141,10 @@ sudo systemctl reload nginx
 - 업로드 최종 저장소는 S3를 사용합니다.
 - 로컬 `./upload` 경로는 `tus` 중간 파일 또는 개발 환경 용도로만 사용합니다.
 - 수평 확장 환경에서는 로컬 디스크를 최종 저장소로 사용하지 않습니다.
+
+## 6. 프론트 확인 항목
+
+- API 주소는 `https://blog-pause.com/api` 기준으로 사용합니다.
+- WebSocket 주소를 직접 조합하면 `wss://blog-pause.com/ws` 를 사용합니다.
+- SockJS fallback 사용 시에도 페이지가 `https`이면 동일하게 `https` 기준으로 접속해야 합니다.
+- `https` 페이지에서 `http://` API 또는 `ws://` WebSocket을 호출하면 브라우저가 차단할 수 있습니다.

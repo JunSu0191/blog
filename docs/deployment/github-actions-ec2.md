@@ -27,18 +27,12 @@ GitHub Actions에서 아래 시크릿을 등록합니다.
 - `EC2_USER`: 보통 `ubuntu`
 - `EC2_PORT`: 보통 `22`
 - `EC2_SSH_KEY`: EC2 접속용 개인키
-- `PROD_ENV_FILE`: 운영용 `.env` 전체 내용을 멀티라인 문자열로 저장한 값
 
 ## 3. 운영용 `.env` 준비 방법
 
 운영용 환경변수 파일 경로는 `/home/ubuntu/app/.env` 입니다.
 
-배포 흐름은 아래 둘 중 하나입니다.
-
-1. GitHub Actions 사용:
-   `PROD_ENV_FILE` 시크릿에 `.env` 전체 내용을 저장하고, 배포 시 `/home/ubuntu/app/.env`로 기록합니다.
-2. 서버 수동 관리:
-   운영 서버에서 직접 `/home/ubuntu/app/.env` 파일을 생성하고 관리합니다.
+운영 서버에서 직접 `/home/ubuntu/app/.env` 파일을 생성하고 관리합니다.
 
 ## 4. AWS 인증 정보
 
@@ -68,5 +62,5 @@ IAM Role을 쓰지 않으면 EC2에 AWS 자격 증명이 별도로 있어야 합
 1. `./gradlew test` 실행
 2. `bootJar` 빌드
 3. JAR와 재시작 스크립트를 `/home/ubuntu/app` 으로 복사
-4. 운영용 `.env` 파일을 `/home/ubuntu/app/.env` 로 생성 또는 덮어쓰기
+4. `/home/ubuntu/app/app.jar` 갱신
 5. `blog.service` 재시작
