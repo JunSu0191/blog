@@ -9,8 +9,6 @@ import com.study.blog.user.UserRole;
 import com.study.blog.user.UserStatus;
 import com.study.blog.user.UserRepository;
 import com.study.blog.verification.VerificationChannel;
-import com.study.blog.verification.VerificationCode;
-import com.study.blog.verification.VerificationPurpose;
 import com.study.blog.verification.VerificationService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -77,7 +75,7 @@ public class AuthController {
     public ResponseEntity<ApiResponseTemplate<Object>> register(@Valid @RequestBody RegisterRequest req) {
         String username = UserNamePolicy.normalizeUsername(req.username());
         String nickname = normalizeNullable(req.nickname());
-        String phoneNumber = verificationService.normalizeTarget(VerificationChannel.SMS, req.phoneNumber());
+        String phoneNumber = normalizePhoneNumber(req.phoneNumber());
         String emailRaw = normalizeNullable(req.email());
         String email = emailRaw == null ? null : verificationService.normalizeTarget(VerificationChannel.EMAIL, emailRaw);
 
@@ -95,18 +93,12 @@ public class AuthController {
         if (userRepository.existsByNickname(nickname)) {
             throw new IllegalArgumentException("이미 존재하는 닉네임입니다.");
         }
-        if (userRepository.existsByPhoneNumber(phoneNumber)) {
+        if (phoneNumber != null && userRepository.existsByPhoneNumber(phoneNumber)) {
             throw new IllegalArgumentException("이미 존재하는 휴대폰 번호입니다.");
         }
         if (email != null && userRepository.existsByEmail(email)) {
             throw new IllegalArgumentException("이미 존재하는 이메일입니다.");
         }
-
-        VerificationCode verificationCode = verificationService.requireVerified(
-                req.verificationId(),
-                VerificationPurpose.SIGNUP,
-                VerificationChannel.SMS,
-                phoneNumber);
 
         User user = User.builder()
                 .username(username)
@@ -115,7 +107,7 @@ public class AuthController {
                 .nickname(nickname)
                 .email(email)
                 .phoneNumber(phoneNumber)
-                .phoneVerifiedAt(verificationCode.getVerifiedAt())
+                .phoneVerifiedAt(null)
                 .role(UserRole.USER)
                 .status(UserStatus.ACTIVE)
                 .mustChangePassword(false)
@@ -233,6 +225,14 @@ public class AuthController {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String normalizePhoneNumber(String value) {
+        String normalized = normalizeNullable(value);
+        if (normalized == null) {
+            return null;
+        }
+        return verificationService.normalizeTarget(VerificationChannel.SMS, normalized);
     }
 
     private Map<String, Object> toRecoveryRequestPayload(VerificationService.SendResult result) {

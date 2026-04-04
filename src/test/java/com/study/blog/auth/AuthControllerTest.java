@@ -5,8 +5,6 @@ import com.study.blog.security.JwtUtil;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import com.study.blog.verification.VerificationChannel;
-import com.study.blog.verification.VerificationCode;
-import com.study.blog.verification.VerificationPurpose;
 import com.study.blog.verification.VerificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +24,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -64,53 +63,34 @@ class AuthControllerTest {
         when(userRepository.existsByNickname("nick")).thenReturn(false);
         when(userRepository.existsByPhoneNumber("01000000001")).thenReturn(false);
         when(verificationService.normalizeTarget(VerificationChannel.SMS, "010-0000-0001")).thenReturn("01000000001");
-        when(verificationService.requireVerified(1L, VerificationPurpose.SIGNUP, VerificationChannel.SMS, "01000000001"))
-                .thenReturn(VerificationCode.builder()
-                        .id(1L)
-                        .purpose(VerificationPurpose.SIGNUP)
-                        .channel(VerificationChannel.SMS)
-                        .target("01000000001")
-                        .expiresAt(LocalDateTime.now().plusMinutes(5))
-                        .verifiedAt(LocalDateTime.now())
-                        .codeHash("hash")
-                        .build());
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
 
-        authController.register(new RegisterRequest("test", "pw", "   ", "nick", null, "010-0000-0001", 1L));
+        authController.register(new RegisterRequest("test", "pw", "   ", "nick", null, "010-0000-0001", null));
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getName()).isEqualTo("test");
         assertThat(captor.getValue().getNickname()).isEqualTo("nick");
         assertThat(captor.getValue().getPhoneNumber()).isEqualTo("01000000001");
+        assertThat(captor.getValue().getPhoneVerifiedAt()).isNull();
+        verify(verificationService, never()).requireVerified(any(), any(), any(), any());
     }
 
     @Test
-    void registerShouldFallbackNameToUsernameWhenNameIsNull() {
+    void registerShouldFallbackNameToUsernameWhenNameIsNullWithoutPhoneVerification() {
         when(userRepository.existsByUsername("test")).thenReturn(false);
         when(userRepository.existsByNickname("nick")).thenReturn(false);
-        when(userRepository.existsByPhoneNumber("01000000001")).thenReturn(false);
-        when(verificationService.normalizeTarget(VerificationChannel.SMS, "01000000001")).thenReturn("01000000001");
         when(verificationService.normalizeTarget(VerificationChannel.EMAIL, "sample.user@example.test")).thenReturn("sample.user@example.test");
         when(userRepository.existsByEmail("sample.user@example.test")).thenReturn(false);
-        when(verificationService.requireVerified(1L, VerificationPurpose.SIGNUP, VerificationChannel.SMS, "01000000001"))
-                .thenReturn(VerificationCode.builder()
-                        .id(1L)
-                        .purpose(VerificationPurpose.SIGNUP)
-                        .channel(VerificationChannel.SMS)
-                        .target("01000000001")
-                        .expiresAt(LocalDateTime.now().plusMinutes(5))
-                        .verifiedAt(LocalDateTime.now())
-                        .codeHash("hash")
-                        .build());
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
 
-        authController.register(new RegisterRequest("test", "pw", null, "nick", "sample.user@example.test", "01000000001", 1L));
+        authController.register(new RegisterRequest("test", "pw", null, "nick", "sample.user@example.test", null, null));
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getName()).isEqualTo("test");
         assertThat(captor.getValue().getEmail()).isEqualTo("sample.user@example.test");
+        assertThat(captor.getValue().getPhoneNumber()).isNull();
     }
 
     @Test
