@@ -1,0 +1,17 @@
+[Unit]
+Description=Blog Spring Boot API
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/app
+Environment=SPRING_PROFILES_ACTIVE=prod
+EnvironmentFile=/home/ubuntu/app/.env
+ExecStart=/usr/bin/java -jar /home/ubuntu/app/app.jar
+SuccessExitStatus=143
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

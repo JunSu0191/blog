@@ -46,3 +46,6 @@ out/
 .env
 .env.*
 !.env.example
+
+### Local Notes ###
+docs/private/
