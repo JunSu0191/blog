@@ -1,6 +1,7 @@
 package com.study.blog.attach;
 
 import me.desair.tus.server.TusFileUploadService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -12,11 +13,12 @@ import java.nio.file.Paths;
 @Configuration
 public class TusConfiguration {
 
-    public static final String FINAL_UPLOAD_DIR = "./upload";
+    public static final String DEFAULT_TUS_STORAGE_DIR = "./upload/tus";
 
     @Bean
-    public TusFileUploadService tusFileUploadService() throws IOException {
-        Path uploadPath = Paths.get(FINAL_UPLOAD_DIR);
+    public TusFileUploadService tusFileUploadService(
+            @Value("${app.tus.storage-path:" + DEFAULT_TUS_STORAGE_DIR + "}") String tusStoragePath) throws IOException {
+        Path uploadPath = Paths.get(tusStoragePath);
         if (!Files.exists(uploadPath)) {
             Files.createDirectories(uploadPath);
         }

@@ -1,8 +1,8 @@
 package com.study.blog.post;
 
 import com.study.blog.core.exception.CodedApiException;
-import com.study.blog.core.web.PublicUrlBuilder;
 import com.study.blog.post.dto.PostContractDto;
+import com.study.blog.storage.UploadStorageService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,12 +14,8 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Set;
@@ -34,16 +30,16 @@ public class PostImageUploadService {
 
     private final PostImageRepository postImageRepository;
     private final UserRepository userRepository;
-    private final PublicUrlBuilder publicUrlBuilder;
+    private final UploadStorageService uploadStorageService;
     private final long maxImageSizeBytes;
 
     public PostImageUploadService(PostImageRepository postImageRepository,
                                   UserRepository userRepository,
-                                  PublicUrlBuilder publicUrlBuilder,
+                                  UploadStorageService uploadStorageService,
                                   @Value("${app.upload.image-max-size-bytes:5242880}") long maxImageSizeBytes) {
         this.postImageRepository = postImageRepository;
         this.userRepository = userRepository;
-        this.publicUrlBuilder = publicUrlBuilder;
+        this.uploadStorageService = uploadStorageService;
         this.maxImageSizeBytes = maxImageSizeBytes;
     }
 
@@ -67,45 +63,45 @@ public class PostImageUploadService {
                 .filter(user -> FLAG_NO.equalsIgnoreCase(user.getDeletedYn()))
                 .orElseThrow(() -> uploadException(HttpStatus.UNAUTHORIZED, "업로더 사용자를 찾을 수 없습니다."));
 
-        String storedName = UUID.randomUUID() + "." + extension;
-        String relativePath = "/upload/posts/" + storedName;
-        Path uploadDirectory = Paths.get("./upload/posts");
-        Path destination = uploadDirectory.resolve(storedName);
-
+        byte[] fileBytes;
         try {
-            Files.createDirectories(uploadDirectory);
-            try (InputStream inputStream = file.getInputStream()) {
-                Files.copy(inputStream, destination, StandardCopyOption.REPLACE_EXISTING);
-            }
+            fileBytes = file.getBytes();
         } catch (IOException ex) {
-            throw uploadException(HttpStatus.INTERNAL_SERVER_ERROR, "이미지 파일 저장에 실패했습니다.");
+            throw uploadException(HttpStatus.INTERNAL_SERVER_ERROR, "이미지 파일을 읽는 중 실패했습니다.");
         }
 
         Integer width = null;
         Integer height = null;
         try {
-            BufferedImage image = ImageIO.read(destination.toFile());
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(fileBytes));
             if (image != null) {
                 width = image.getWidth();
                 height = image.getHeight();
             }
-        } catch (IOException ignored) {
-            // width/height 조회 실패는 업로드 실패로 간주하지 않는다.
+
+            String storedName = UUID.randomUUID() + "." + extension;
+            String storedPath = uploadStorageService.store(
+                    "posts/" + storedName,
+                    new ByteArrayInputStream(fileBytes),
+                    file.getContentType(),
+                    (long) fileBytes.length);
+
+            PostImage metadata = PostImage.builder()
+                    .uploader(uploader)
+                    .url(storedPath)
+                    .width(width)
+                    .height(height)
+                    .size(file.getSize())
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
+            postImageRepository.save(metadata);
+
+            String publicUrl = uploadStorageService.toPublicUrl(request, storedPath);
+            return new PostContractDto.ImageUploadResponse(publicUrl, width, height, file.getSize());
+        } catch (IOException ex) {
+            throw uploadException(HttpStatus.INTERNAL_SERVER_ERROR, "이미지 파일 저장에 실패했습니다.");
         }
-
-        PostImage metadata = PostImage.builder()
-                .uploader(uploader)
-                .url(relativePath)
-                .width(width)
-                .height(height)
-                .size(file.getSize())
-                .createdAt(LocalDateTime.now())
-                .build();
-
-        postImageRepository.save(metadata);
-
-        String publicUrl = publicUrlBuilder.build(request, relativePath);
-        return new PostContractDto.ImageUploadResponse(publicUrl, width, height, file.getSize());
     }
 
     private String extractExtension(String fileName) {

@@ -3,7 +3,7 @@ package com.study.blog.attach;
 import com.study.blog.attach.dto.AttachFileDto;
 import com.study.blog.core.response.ApiResponseFactory;
 import com.study.blog.core.response.ApiResponseTemplate;
-import com.study.blog.core.web.PublicUrlBuilder;
+import com.study.blog.storage.UploadStorageService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import me.desair.tus.server.TusFileUploadService;
@@ -16,10 +16,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.InputStream;
 import java.net.URI;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.UUID;
 
@@ -27,18 +23,19 @@ import java.util.UUID;
 @RequestMapping("/api/attach-files")
 public class AttachFileController {
     private static final Logger log = LoggerFactory.getLogger(AttachFileController.class);
+    private static final String DEFAULT_ATTACH_DIR = "attachments";
 
     private final AttachFileService attachFileService;
     private final TusFileUploadService tusFileUploadService;
-    private final PublicUrlBuilder publicUrlBuilder;
+    private final UploadStorageService uploadStorageService;
 
     public AttachFileController(
             AttachFileService attachFileService,
             TusFileUploadService tusFileUploadService,
-            PublicUrlBuilder publicUrlBuilder) {
+            UploadStorageService uploadStorageService) {
         this.attachFileService = attachFileService;
         this.tusFileUploadService = tusFileUploadService;
-        this.publicUrlBuilder = publicUrlBuilder;
+        this.uploadStorageService = uploadStorageService;
     }
 
     @PostMapping
@@ -101,31 +98,27 @@ public class AttachFileController {
             storedName = storedName + extension;
         }
 
-        // 최종 저장 경로 설정
-        Path uploadsDir = Paths.get(TusConfiguration.FINAL_UPLOAD_DIR);
-        if (!Files.exists(uploadsDir)) {
-            Files.createDirectories(uploadsDir);
-        }
-        Path finalFilePath = uploadsDir.resolve(storedName);
-
-        // TUS 임시 파일을 최종 위치로 복사
+        String storedPath;
         try (InputStream inputStream = tusFileUploadService.getUploadedBytes(uploadUri)) {
-            Files.copy(inputStream, finalFilePath, StandardCopyOption.REPLACE_EXISTING);
+            storedPath = uploadStorageService.store(
+                    DEFAULT_ATTACH_DIR + "/" + storedName,
+                    inputStream,
+                    null,
+                    uploadInfo.getLength());
         }
-        log.info("tus file copied to final path: uploadId={}, path={}", uploadId, finalFilePath);
+        log.info("tus file stored: uploadId={}, path={}", uploadId, storedPath);
 
         // DB에 저장
         AttachFileDto.Request req = new AttachFileDto.Request();
         req.postId = completeReq.postId;
         req.originalName = completeReq.originalName != null ? completeReq.originalName : originalFileName;
         req.storedName = storedName;
-        String publicPath = "/upload/" + storedName;
-        req.path = publicPath;
+        req.path = storedPath;
 
         AttachFileDto.Response resp = attachFileService.create(req);
         log.info("attach file metadata saved: attachFileId={}, uploadId={}", resp.id, uploadId);
 
-        String publicUrl = buildPublicUrl(request, publicPath);
+        String publicUrl = buildPublicUrl(request, storedPath);
         String markdownAlt = completeReq.originalName != null ? completeReq.originalName : storedName;
 
         TusCompleteResponse completeResponse = new TusCompleteResponse();
@@ -243,6 +236,6 @@ public class AttachFileController {
     }
 
     private String buildPublicUrl(HttpServletRequest request, String path) {
-        return publicUrlBuilder.build(request, path);
+        return uploadStorageService.toPublicUrl(request, path);
     }
 }
