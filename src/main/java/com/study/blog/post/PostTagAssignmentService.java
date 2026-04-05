@@ -5,6 +5,7 @@ import com.study.blog.tag.PostTagRepository;
 import com.study.blog.tag.Tag;
 import com.study.blog.tag.TagRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
 import java.time.LocalDateTime;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 
 @Service
+@Transactional
 public class PostTagAssignmentService {
 
     private static final String FLAG_NO = "N";
@@ -34,6 +36,7 @@ public class PostTagAssignmentService {
 
     public void replaceTags(Post post, List<Long> tagIds, List<String> tagNames) {
         postTagRepository.deleteByPost(post);
+        postTagRepository.flush();
 
         List<Tag> resolvedTags = resolveTags(tagIds, tagNames);
         if (resolvedTags.isEmpty()) {
@@ -49,7 +52,7 @@ public class PostTagAssignmentService {
                     .createdAt(LocalDateTime.now())
                     .build());
         }
-        postTagRepository.saveAll(entries);
+        postTagRepository.saveAllAndFlush(entries);
     }
 
     private List<Tag> resolveTags(List<Long> tagIds, List<String> tagNames) {
