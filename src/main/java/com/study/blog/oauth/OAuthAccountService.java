@@ -106,9 +106,6 @@ public class OAuthAccountService {
         if (userRepository.existsByUsername(normalizedUsername)) {
             throw new IllegalStateException("이미 사용 중인 아이디입니다.");
         }
-        if (userRepository.existsByNickname(normalizedNickname)) {
-            throw new IllegalStateException("이미 사용 중인 닉네임입니다.");
-        }
 
         User createdUser = User.builder()
                 .username(normalizedUsername)

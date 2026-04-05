@@ -68,8 +68,7 @@ public class AuthController {
         if (normalized == null) {
             throw new IllegalArgumentException("닉네임을 입력해 주세요.");
         }
-        boolean available = !userRepository.existsByNickname(normalized);
-        return ApiResponseFactory.ok(Map.of("available", available));
+        return ApiResponseFactory.ok(Map.of("available", true));
     }
 
     @PostMapping("/register")
@@ -90,9 +89,6 @@ public class AuthController {
             ApiResponseTemplate<Object> body = new ApiResponseTemplate<>(null, HttpStatus.BAD_REQUEST,
                     "이미 존재하는 아이디입니다.", false);
             return ResponseEntity.badRequest().body(body);
-        }
-        if (userRepository.existsByNickname(nickname)) {
-            throw new IllegalArgumentException("이미 존재하는 닉네임입니다.");
         }
         if (phoneNumber != null && userRepository.existsByPhoneNumber(phoneNumber)) {
             throw new IllegalArgumentException("이미 존재하는 휴대폰 번호입니다.");

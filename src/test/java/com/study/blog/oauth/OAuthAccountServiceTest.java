@@ -136,7 +136,6 @@ class OAuthAccountServiceTest {
         when(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.NAVER, "naver-123"))
                 .thenReturn(Optional.empty());
         when(userRepository.existsByUsername("tlswnstn21")).thenReturn(false);
-        when(userRepository.existsByNickname("신준수")).thenReturn(false);
         when(userRepository.existsByEmail("user@naver.com")).thenReturn(false);
         when(passwordEncoder.encode(any(String.class))).thenReturn("encoded");
         when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {

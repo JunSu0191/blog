@@ -59,9 +59,6 @@ public class MyPageService {
         }
         if (req.getNickname() != null) {
             String nickname = trimToNull(req.getNickname());
-            if (nickname != null && !nickname.equals(user.getNickname()) && userRepository.existsByNickname(nickname)) {
-                throw new IllegalArgumentException("이미 사용 중인 닉네임입니다.");
-            }
             if (nickname != null) {
                 user.setNickname(nickname);
             }

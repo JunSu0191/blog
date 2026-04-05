@@ -64,7 +64,6 @@ class AuthControllerTest {
     @Test
     void registerShouldFallbackNameToUsernameWhenNameIsBlank() {
         when(userRepository.existsByUsername("test")).thenReturn(false);
-        when(userRepository.existsByNickname("nick")).thenReturn(false);
         when(userRepository.existsByPhoneNumber("01000000001")).thenReturn(false);
         when(verificationService.normalizeTarget(VerificationChannel.SMS, "010-0000-0001")).thenReturn("01000000001");
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
@@ -83,7 +82,6 @@ class AuthControllerTest {
     @Test
     void registerShouldFallbackNameToUsernameWhenNameIsNullWithoutPhoneVerification() {
         when(userRepository.existsByUsername("test")).thenReturn(false);
-        when(userRepository.existsByNickname("nick")).thenReturn(false);
         when(verificationService.normalizeTarget(VerificationChannel.EMAIL, "sample.user@example.test")).thenReturn("sample.user@example.test");
         when(userRepository.existsByEmail("sample.user@example.test")).thenReturn(false);
         when(passwordEncoder.encode("pw")).thenReturn("encoded");
