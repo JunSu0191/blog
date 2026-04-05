@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.io.InputStream;
 import java.net.URI;
+import java.util.Locale;
 import java.util.List;
 import java.util.UUID;
 
@@ -68,7 +69,7 @@ public class AttachFileController {
     public ResponseEntity<ApiResponseTemplate<TusCompleteResponse>> completeUpload(
             @RequestBody TusCompleteRequest completeReq,
             HttpServletRequest request) throws Exception {
-        String uploadId = completeReq.uploadId;
+        String uploadId = normalizeRequired(completeReq.uploadId, "업로드 ID가 없습니다.");
         String uploadUri = "/api/attach-files/uploads/" + uploadId;
         log.info("tus complete requested: uploadId={}, postId={}", uploadId, completeReq.postId);
 
@@ -90,7 +91,10 @@ public class AttachFileController {
 
         // 파일명 처리
         String originalFileName = uploadInfo.getFileName() != null ? uploadInfo.getFileName() : "file";
-        String storedName = completeReq.storedName != null ? completeReq.storedName : UUID.randomUUID().toString();
+        String storedName = normalizeStoredName(completeReq.storedName);
+        if (storedName == null) {
+            storedName = UUID.randomUUID().toString();
+        }
 
         // 파일 확장자 추가 (원본 파일명에서)
         if (originalFileName.contains(".") && !storedName.contains(".")) {
@@ -103,7 +107,7 @@ public class AttachFileController {
             storedPath = uploadStorageService.store(
                     DEFAULT_ATTACH_DIR + "/" + storedName,
                     inputStream,
-                    null,
+                    uploadInfo.getFileMimeType(),
                     uploadInfo.getLength());
         }
         log.info("tus file stored: uploadId={}, path={}", uploadId, storedPath);
@@ -131,6 +135,7 @@ public class AttachFileController {
         completeResponse.displayUrl = publicUrl;
         completeResponse.markdown = "![" + markdownAlt + "](" + publicUrl + ")";
 
+        cleanupTusUpload(uploadUri, uploadId);
         return ApiResponseFactory.created(URI.create("/api/attach-files/" + resp.id), completeResponse);
     }
 
@@ -237,5 +242,43 @@ public class AttachFileController {
 
     private String buildPublicUrl(HttpServletRequest request, String path) {
         return uploadStorageService.toPublicUrl(request, path);
+    }
+
+    private void cleanupTusUpload(String uploadUri, String uploadId) {
+        try {
+            tusFileUploadService.deleteUpload(uploadUri);
+            log.info("tus temp upload deleted: uploadId={}", uploadId);
+        } catch (Exception ex) {
+            log.warn("failed to delete tus temp upload: uploadId={}", uploadId, ex);
+        }
+    }
+
+    private String normalizeStoredName(String storedName) {
+        String normalized = normalizeNullable(storedName);
+        if (normalized == null) {
+            return null;
+        }
+        String sanitized = normalized.replace('\\', '_')
+                .replace('/', '_')
+                .replaceAll("[^a-zA-Z0-9._-]", "_")
+                .replaceAll("_+", "_");
+        sanitized = sanitized.replaceAll("^[_\\-.]+", "").replaceAll("[_\\-.]+$", "");
+        return sanitized.isBlank() ? null : sanitized.toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeRequired(String value, String message) {
+        String normalized = normalizeNullable(value);
+        if (normalized == null) {
+            throw new IllegalArgumentException(message);
+        }
+        return normalized;
+    }
+
+    private String normalizeNullable(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }
