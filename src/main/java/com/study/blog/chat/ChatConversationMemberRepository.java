@@ -53,6 +53,7 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
                 m.conversation.id as conversationId,
                 m.user.id as userId,
                 case
+                    when m.user.nickname is not null and trim(m.user.nickname) <> '' then m.user.nickname
                     when m.user.name is null or trim(m.user.name) = '' then m.user.username
                     else m.user.name
                 end as userName
@@ -69,6 +70,7 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
                 m.conversation.id as conversationId,
                 m.user.id as userId,
                 case
+                    when m.user.nickname is not null and trim(m.user.nickname) <> '' then m.user.nickname
                     when m.user.name is null or trim(m.user.name) = '' then m.user.username
                     else m.user.name
                 end as userName

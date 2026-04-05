@@ -218,7 +218,13 @@ public class GroupInviteService {
         response.setId(invite.getId());
         response.setGroupThreadId(invite.getGroupThread().getId());
         response.setInviterId(invite.getInviter().getId());
+        response.setInviterUsername(invite.getInviter().getUsername());
+        response.setInviterName(invite.getInviter().getName());
+        response.setInviterNickname(invite.getInviter().getNickname());
         response.setInviteeId(invite.getInvitee().getId());
+        response.setInviteeUsername(invite.getInvitee().getUsername());
+        response.setInviteeName(invite.getInvitee().getName());
+        response.setInviteeNickname(invite.getInvitee().getNickname());
         response.setStatus(invite.getStatus());
         response.setCreatedAt(invite.getCreatedAt());
         response.setRespondedAt(invite.getRespondedAt());

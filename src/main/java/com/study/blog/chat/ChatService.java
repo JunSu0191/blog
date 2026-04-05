@@ -115,6 +115,7 @@ public class ChatService {
                     r.setUserId(user.getId());
                     r.setUsername(user.getUsername());
                     r.setName(user.getName());
+                    r.setNickname(user.getNickname());
                     r.setMe(user.getId().equals(userId));
                     return r;
                 })

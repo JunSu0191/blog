@@ -31,7 +31,13 @@ public class ChatContractDto {
     public static class FriendRequestResponse {
         private Long id;
         private Long requesterId;
+        private String requesterUsername;
+        private String requesterName;
+        private String requesterNickname;
         private Long targetId;
+        private String targetUsername;
+        private String targetName;
+        private String targetNickname;
         private FriendshipRequestStatus status;
         private LocalDateTime createdAt;
         private LocalDateTime updatedAt;
@@ -78,7 +84,13 @@ public class ChatContractDto {
         private Long id;
         private Long groupThreadId;
         private Long inviterId;
+        private String inviterUsername;
+        private String inviterName;
+        private String inviterNickname;
         private Long inviteeId;
+        private String inviteeUsername;
+        private String inviteeName;
+        private String inviteeNickname;
         private GroupInviteStatus status;
         private LocalDateTime createdAt;
         private LocalDateTime respondedAt;

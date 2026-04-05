@@ -286,7 +286,13 @@ public class FriendshipService {
         ChatContractDto.FriendRequestResponse response = new ChatContractDto.FriendRequestResponse();
         response.setId(request.getId());
         response.setRequesterId(request.getRequester().getId());
+        response.setRequesterUsername(request.getRequester().getUsername());
+        response.setRequesterName(request.getRequester().getName());
+        response.setRequesterNickname(request.getRequester().getNickname());
         response.setTargetId(request.getTarget().getId());
+        response.setTargetUsername(request.getTarget().getUsername());
+        response.setTargetName(request.getTarget().getName());
+        response.setTargetNickname(request.getTarget().getNickname());
         response.setStatus(request.getStatus());
         response.setCreatedAt(request.getCreatedAt());
         response.setUpdatedAt(request.getUpdatedAt());

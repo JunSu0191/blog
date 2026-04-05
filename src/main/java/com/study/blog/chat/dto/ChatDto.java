@@ -38,6 +38,7 @@ public class ChatDto {
         private Long userId;
         private String username;
         private String name;
+        private String nickname;
         private boolean me;
     }
 

@@ -268,6 +268,7 @@ public class AdminService {
         response.setId(user.getId());
         response.setUsername(user.getUsername());
         response.setName(user.getName());
+        response.setNickname(user.getNickname());
         response.setRole(user.getRole());
         response.setStatus(user.getStatus());
         response.setMustChangePassword(user.getMustChangePassword());

@@ -34,6 +34,7 @@ public class AdminDto {
         private Long id;
         private String username;
         private String name;
+        private String nickname;
         private UserRole role;
         private UserStatus status;
         private Boolean mustChangePassword;
