@@ -26,6 +26,7 @@ public class CommentDto {
         public Long postId;
         public Long userId;
         public String name; // 사용자 이름
+        public String nickname; // 사용자 닉네임
         public String username; // 사용자 아이디(공개 블로그 URL 키)
         public Long parentId; // 부모 댓글 ID
         public String content;
