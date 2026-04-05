@@ -196,7 +196,7 @@ public class AttachFileController {
         }
     }
 
-    @RequestMapping(value = "/uploads/**", method = { RequestMethod.OPTIONS, RequestMethod.POST,
+    @RequestMapping(value = {"/uploads", "/uploads/", "/uploads/**"}, method = { RequestMethod.OPTIONS, RequestMethod.POST,
             RequestMethod.PATCH, RequestMethod.HEAD, RequestMethod.DELETE, RequestMethod.GET })
     public void handleTusRequest(HttpServletRequest request, HttpServletResponse response)
             throws Exception {
