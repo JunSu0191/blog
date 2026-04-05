@@ -22,7 +22,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             "/api/auth/login",
             "/api/auth/register",
             "/api/auth/check-username",
-            "/api/auth/check-nickname"
+            "/api/auth/check-nickname",
+            "/api/auth/oauth/signup/pending",
+            "/api/auth/oauth/signup/complete"
     );
 
     private final JwtUtil jwtUtil;

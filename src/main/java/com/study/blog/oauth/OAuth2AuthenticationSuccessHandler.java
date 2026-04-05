@@ -40,13 +40,23 @@ public class OAuth2AuthenticationSuccessHandler implements AuthenticationSuccess
                 throw new OAuth2LoginException("invalid_oauth_principal", "OAuth 사용자 정보가 올바르지 않습니다.");
             }
 
-            User user = oauthAccountService.loginOrRegister(principal.getUserInfo());
-            String jwt = jwtUtil.generateToken(user.getUsername());
-
-            String redirectUrl = UriComponentsBuilder.fromUriString(successRedirectUri)
-                    .fragment("token=" + jwt)
-                    .build()
-                    .toUriString();
+            OAuthAccountService.OAuthLoginResult result = oauthAccountService.loginOrPrepareSignup(principal.getUserInfo());
+            String redirectUrl;
+            if (result.needsProfileSetup()) {
+                redirectUrl = UriComponentsBuilder.fromUriString(successRedirectUri)
+                        .queryParam("needsProfileSetup", true)
+                        .queryParam("signupToken", result.signupToken())
+                        .build()
+                        .encode()
+                        .toUriString();
+            } else {
+                User user = result.user();
+                String jwt = jwtUtil.generateToken(user.getUsername());
+                redirectUrl = UriComponentsBuilder.fromUriString(successRedirectUri)
+                        .fragment("token=" + jwt)
+                        .build()
+                        .toUriString();
+            }
             response.sendRedirect(redirectUrl);
         } catch (OAuth2LoginException ex) {
             redirectFailure(response, ex.getErrorCode(), ex.getMessage());

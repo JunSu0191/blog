@@ -1,6 +1,7 @@
 package com.study.blog.auth;
 
 import com.study.blog.core.response.ApiResponseTemplate;
+import com.study.blog.oauth.OAuthAccountService;
 import com.study.blog.security.JwtUtil;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
@@ -43,6 +44,8 @@ class AuthControllerTest {
     private VerificationService verificationService;
     @Mock
     private AccountRecoveryService accountRecoveryService;
+    @Mock
+    private OAuthAccountService oauthAccountService;
 
     private AuthController authController;
 
@@ -54,7 +57,8 @@ class AuthControllerTest {
                 authenticationManager,
                 jwtUtil,
                 verificationService,
-                accountRecoveryService);
+                accountRecoveryService,
+                oauthAccountService);
     }
 
     @Test
@@ -166,6 +170,28 @@ class AuthControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();
         assertThat(response.getBody().getData()).isNull();
+    }
+
+    @Test
+    void completeOAuthSignupShouldReturnLoginPayload() {
+        User user = User.builder()
+                .id(9L)
+                .username("tlswnstn21")
+                .nickname("신준수")
+                .name("신준수")
+                .password("encoded")
+                .deletedYn("N")
+                .build();
+        when(oauthAccountService.completeSignup("signup-token", "tlswnstn21", "신준수")).thenReturn(user);
+        when(jwtUtil.generateToken("tlswnstn21")).thenReturn("jwt-token");
+
+        ResponseEntity<ApiResponseTemplate<Object>> response = authController.completeOAuthSignup(
+                new OAuthSignupCompleteRequest("signup-token", "tlswnstn21", "신준수"));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        AuthResponse.Login data = (AuthResponse.Login) response.getBody().getData();
+        assertThat(data.token()).isEqualTo("jwt-token");
+        assertThat(data.user().username()).isEqualTo("tlswnstn21");
     }
 
     private Authentication mockAuthentication(String username) {

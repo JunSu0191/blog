@@ -58,7 +58,8 @@ class OAuth2AuthenticationSuccessHandlerTest {
                 .deletedYn("N")
                 .build();
 
-        when(oauthAccountService.loginOrRegister(principal.getUserInfo())).thenReturn(user);
+        when(oauthAccountService.loginOrPrepareSignup(principal.getUserInfo()))
+                .thenReturn(OAuthAccountService.OAuthLoginResult.completed(user));
         when(jwtUtil.generateToken("google_user")).thenReturn("jwt-token-value");
 
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -70,6 +71,25 @@ class OAuth2AuthenticationSuccessHandlerTest {
     }
 
     @Test
+    void shouldRedirectToSignupCompletionWhenProfileSetupIsRequired() throws Exception {
+        OAuth2UserPrincipal principal = oauthPrincipal();
+        OAuth2AuthenticationToken authentication = new OAuth2AuthenticationToken(
+                principal,
+                principal.getAuthorities(),
+                "google");
+
+        when(oauthAccountService.loginOrPrepareSignup(principal.getUserInfo()))
+                .thenReturn(OAuthAccountService.OAuthLoginResult.pending("signup-token"));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        handler.onAuthenticationSuccess(new MockHttpServletRequest(), response, authentication);
+
+        assertThat(response.getStatus()).isEqualTo(302);
+        assertThat(response.getRedirectedUrl())
+                .isEqualTo("http://localhost:5173/auth/callback?needsProfileSetup=true&signupToken=signup-token");
+    }
+
+    @Test
     void shouldRedirectFailureWhenMappingFails() throws Exception {
         OAuth2UserPrincipal principal = oauthPrincipal();
         OAuth2AuthenticationToken authentication = new OAuth2AuthenticationToken(
@@ -77,7 +97,7 @@ class OAuth2AuthenticationSuccessHandlerTest {
                 principal.getAuthorities(),
                 "google");
 
-        when(oauthAccountService.loginOrRegister(principal.getUserInfo()))
+        when(oauthAccountService.loginOrPrepareSignup(principal.getUserInfo()))
                 .thenThrow(new OAuth2LoginException("account_suspended", "정지된 계정입니다."));
 
         MockHttpServletResponse response = new MockHttpServletResponse();

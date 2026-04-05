@@ -12,4 +12,9 @@ public class AuthResponse {
 
     public record Login(String token, UserSummary user) {
     }
+
+    public record PendingOAuthSignup(String signupToken, String provider,
+                                     String email, String name,
+                                     String usernameSuggestion, String nickname) {
+    }
 }

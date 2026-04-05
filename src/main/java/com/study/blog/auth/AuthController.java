@@ -2,6 +2,7 @@ package com.study.blog.auth;
 
 import com.study.blog.core.response.ApiResponseFactory;
 import com.study.blog.core.response.ApiResponseTemplate;
+import com.study.blog.oauth.OAuthAccountService;
 import com.study.blog.security.JwtUtil;
 import com.study.blog.user.User;
 import com.study.blog.user.UserNamePolicy;
@@ -38,25 +39,25 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final VerificationService verificationService;
     private final AccountRecoveryService accountRecoveryService;
+    private final OAuthAccountService oauthAccountService;
 
     public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
             AuthenticationManager authenticationManager, JwtUtil jwtUtil,
             VerificationService verificationService,
-            AccountRecoveryService accountRecoveryService) {
+            AccountRecoveryService accountRecoveryService,
+            OAuthAccountService oauthAccountService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.verificationService = verificationService;
         this.accountRecoveryService = accountRecoveryService;
+        this.oauthAccountService = oauthAccountService;
     }
 
     @GetMapping("/check-username")
     public ResponseEntity<ApiResponseTemplate<Map<String, Object>>> checkUsername(@RequestParam String username) {
-        String normalized = UserNamePolicy.normalizeUsername(username);
-        if (normalized == null || normalized.isBlank()) {
-            throw new IllegalArgumentException("아이디를 입력해 주세요.");
-        }
+        String normalized = UserNamePolicy.validatePublicUsername(username);
         boolean available = !userRepository.existsByUsername(normalized);
         return ApiResponseFactory.ok(Map.of("available", available));
     }
@@ -73,7 +74,7 @@ public class AuthController {
 
     @PostMapping("/register")
     public ResponseEntity<ApiResponseTemplate<Object>> register(@Valid @RequestBody RegisterRequest req) {
-        String username = UserNamePolicy.normalizeUsername(req.username());
+        String username = UserNamePolicy.validatePublicUsername(req.username());
         String nickname = normalizeNullable(req.nickname());
         String phoneNumber = normalizePhoneNumber(req.phoneNumber());
         String emailRaw = normalizeNullable(req.email());
@@ -142,6 +143,27 @@ public class AuthController {
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
         String token = jwtUtil.generateToken(user.getUsername());
 
+        return ApiResponseFactory.ok(new AuthResponse.Login(token, toUserSummary(user)));
+    }
+
+    @GetMapping("/oauth/signup/pending")
+    public ResponseEntity<ApiResponseTemplate<AuthResponse.PendingOAuthSignup>> getPendingOAuthSignup(
+            @RequestParam String signupToken) {
+        OAuthAccountService.PendingSignupProfile pendingSignup = oauthAccountService.getPendingSignupProfile(signupToken);
+        return ApiResponseFactory.ok(new AuthResponse.PendingOAuthSignup(
+                pendingSignup.signupToken(),
+                pendingSignup.provider(),
+                pendingSignup.email(),
+                pendingSignup.name(),
+                pendingSignup.suggestedUsername(),
+                pendingSignup.suggestedNickname()));
+    }
+
+    @PostMapping("/oauth/signup/complete")
+    public ResponseEntity<ApiResponseTemplate<Object>> completeOAuthSignup(
+            @Valid @RequestBody OAuthSignupCompleteRequest req) {
+        User user = oauthAccountService.completeSignup(req.signupToken(), req.username(), req.nickname());
+        String token = jwtUtil.generateToken(user.getUsername());
         return ApiResponseFactory.ok(new AuthResponse.Login(token, toUserSummary(user)));
     }
 

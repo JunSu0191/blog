@@ -49,9 +49,10 @@ public class SecurityConfig {
                                                    OAuth2AuthenticationFailureHandler oauth2FailureHandler) throws Exception {
         http.csrf().disable()
                 .cors().and()
-                .authorizeHttpRequests(auth -> auth
+                        .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/login", "/api/auth/register",
                                 "/api/auth/check-username", "/api/auth/check-nickname",
+                                "/api/auth/oauth/signup/pending", "/api/auth/oauth/signup/complete",
                                 "/api/auth/find-id/**", "/api/auth/reset-password/**",
                                 "/api/auth/me",
                                 "/api/verifications/**",

@@ -28,6 +28,8 @@ class OAuthAccountServiceTest {
     @Mock
     private OAuthAccountRepository oauthAccountRepository;
     @Mock
+    private PendingOAuthSignupRepository pendingOAuthSignupRepository;
+    @Mock
     private UserRepository userRepository;
     @Mock
     private PasswordEncoder passwordEncoder;
@@ -36,7 +38,12 @@ class OAuthAccountServiceTest {
 
     @BeforeEach
     void setUp() {
-        oauthAccountService = new OAuthAccountService(oauthAccountRepository, userRepository, passwordEncoder);
+        oauthAccountService = new OAuthAccountService(
+                oauthAccountRepository,
+                pendingOAuthSignupRepository,
+                userRepository,
+                passwordEncoder,
+                1800);
     }
 
     @Test
@@ -61,34 +68,30 @@ class OAuthAccountServiceTest {
         when(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.GOOGLE, "google-123"))
                 .thenReturn(Optional.of(account));
 
-        User result = oauthAccountService.loginOrRegister(
+        OAuthAccountService.OAuthLoginResult result = oauthAccountService.loginOrPrepareSignup(
                 new OAuthUserInfo(OAuthProvider.GOOGLE, "google-123", "user@gmail.com", "Google User"));
 
-        assertThat(result.getId()).isEqualTo(1L);
+        assertThat(result.user().getId()).isEqualTo(1L);
         verify(oauthAccountRepository).save(account);
         verify(userRepository, never()).saveAndFlush(any(User.class));
     }
 
     @Test
-    void shouldCreateUserAndOAuthAccountForNewSocialUser() {
+    void shouldCreatePendingSignupForNewSocialUser() {
         when(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.KAKAO, "999"))
                 .thenReturn(Optional.empty());
-        when(userRepository.existsByUsername("kakao_999")).thenReturn(false);
-        when(passwordEncoder.encode(any(String.class))).thenReturn("encoded");
-        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
-            User saved = invocation.getArgument(0);
+        when(pendingOAuthSignupRepository.saveAndFlush(any(PendingOAuthSignup.class))).thenAnswer(invocation -> {
+            PendingOAuthSignup saved = invocation.getArgument(0);
             saved.setId(100L);
             return saved;
         });
-        when(oauthAccountRepository.saveAndFlush(any(OAuthAccount.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        User result = oauthAccountService.loginOrRegister(
+        OAuthAccountService.OAuthLoginResult result = oauthAccountService.loginOrPrepareSignup(
                 new OAuthUserInfo(OAuthProvider.KAKAO, "999", null, "sample_kakao_user"));
 
-        assertThat(result.getId()).isEqualTo(100L);
-        assertThat(result.getUsername()).isEqualTo("kakao_999");
-        assertThat(result.getRole()).isEqualTo(UserRole.USER);
-        verify(oauthAccountRepository).saveAndFlush(any(OAuthAccount.class));
+        assertThat(result.needsProfileSetup()).isTrue();
+        assertThat(result.signupToken()).isNotBlank();
+        verify(pendingOAuthSignupRepository).saveAndFlush(any(PendingOAuthSignup.class));
     }
 
     @Test
@@ -111,54 +114,63 @@ class OAuthAccountServiceTest {
         when(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.GOOGLE, "google-123"))
                 .thenReturn(Optional.of(account));
 
-        assertThatThrownBy(() -> oauthAccountService.loginOrRegister(
+        assertThatThrownBy(() -> oauthAccountService.loginOrPrepareSignup(
                 new OAuthUserInfo(OAuthProvider.GOOGLE, "google-123", "user@gmail.com", "Google User")))
                 .isInstanceOf(OAuth2LoginException.class)
                 .hasMessageContaining("정지된 계정");
     }
 
     @Test
-    void shouldRecoverWhenOAuthAccountCreatedConcurrently() {
-        User createdUser = User.builder()
-                .id(200L)
-                .username("naver_user")
-                .password("encoded")
-                .name("Naver User")
-                .status(UserStatus.ACTIVE)
-                .role(UserRole.USER)
-                .deletedYn("N")
-                .build();
-        User concurrentUser = User.builder()
-                .id(201L)
-                .username("existing_naver")
-                .password("encoded")
-                .name("Existing User")
-                .status(UserStatus.ACTIVE)
-                .role(UserRole.USER)
-                .deletedYn("N")
-                .build();
-        OAuthAccount concurrentAccount = OAuthAccount.builder()
-                .id(30L)
+    void shouldCompletePendingSignup() {
+        PendingOAuthSignup pendingSignup = PendingOAuthSignup.builder()
+                .id(10L)
                 .provider(OAuthProvider.NAVER)
                 .providerUserId("naver-123")
-                .user(concurrentUser)
+                .email("user@naver.com")
+                .name("Naver User")
+                .signupToken("signup-token")
+                .expiresAt(LocalDateTime.now().plusMinutes(10))
                 .build();
 
+        when(pendingOAuthSignupRepository.findBySignupToken("signup-token")).thenReturn(Optional.of(pendingSignup));
         when(oauthAccountRepository.findByProviderAndProviderUserId(OAuthProvider.NAVER, "naver-123"))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(concurrentAccount));
-        when(userRepository.existsByUsername("existing_naver")).thenReturn(false);
+                .thenReturn(Optional.empty());
+        when(userRepository.existsByUsername("tlswnstn21")).thenReturn(false);
+        when(userRepository.existsByNickname("신준수")).thenReturn(false);
+        when(userRepository.existsByEmail("user@naver.com")).thenReturn(false);
         when(passwordEncoder.encode(any(String.class))).thenReturn("encoded");
-        when(userRepository.saveAndFlush(any(User.class))).thenReturn(createdUser);
-        when(oauthAccountRepository.saveAndFlush(any(OAuthAccount.class)))
-                .thenThrow(new DataIntegrityViolationException("duplicate"));
+        when(userRepository.saveAndFlush(any(User.class))).thenAnswer(invocation -> {
+            User saved = invocation.getArgument(0);
+            saved.setId(200L);
+            return saved;
+        });
+        when(oauthAccountRepository.saveAndFlush(any(OAuthAccount.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        User result = oauthAccountService.loginOrRegister(
-                new OAuthUserInfo(OAuthProvider.NAVER, "naver-123", "existing_naver@naver.com", "Naver User"));
+        User result = oauthAccountService.completeSignup("signup-token", "tlswnstn21", "신준수");
 
-        assertThat(result.getId()).isEqualTo(201L);
-        verify(userRepository).delete(createdUser);
-        verify(userRepository).flush();
-        verify(oauthAccountRepository).save(concurrentAccount);
+        assertThat(result.getId()).isEqualTo(200L);
+        assertThat(result.getUsername()).isEqualTo("tlswnstn21");
+        assertThat(result.getNickname()).isEqualTo("신준수");
+        verify(pendingOAuthSignupRepository).delete(pendingSignup);
+        verify(oauthAccountRepository).saveAndFlush(any(OAuthAccount.class));
+    }
+
+    @Test
+    void shouldRejectExpiredPendingSignup() {
+        PendingOAuthSignup pendingSignup = PendingOAuthSignup.builder()
+                .id(10L)
+                .provider(OAuthProvider.NAVER)
+                .providerUserId("naver-123")
+                .signupToken("signup-token")
+                .expiresAt(LocalDateTime.now().minusSeconds(1))
+                .build();
+
+        when(pendingOAuthSignupRepository.findBySignupToken("signup-token")).thenReturn(Optional.of(pendingSignup));
+
+        assertThatThrownBy(() -> oauthAccountService.completeSignup("signup-token", "tlswnstn21", "신준수"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("만료");
+
+        verify(pendingOAuthSignupRepository).delete(pendingSignup);
     }
 }
