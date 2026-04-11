@@ -68,7 +68,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/posts", "/api/posts/*", "/api/posts/*/related")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories", "/api/categories/*").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/comments/posts/*").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/comments/posts/*", "/api/comments/*/replies").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/v1/posts/slug/check",
                                 "/api/v1/tags", "/api/v1/tags/*", "/api/v1/tags/*/posts",

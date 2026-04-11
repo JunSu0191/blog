@@ -1,7 +1,6 @@
 package com.study.blog.comment.dto;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * 댓글 API용 요청/응답 DTO 모음입니다.
@@ -34,8 +33,8 @@ public class CommentDto {
         public Long likeCount;
         public Long dislikeCount;
         public String myReaction;
+        public Long replyCount;
         public LocalDateTime createdAt;
         public LocalDateTime updatedAt;
-        public List<Response> replies; // 대댓글 목록
     }
 }

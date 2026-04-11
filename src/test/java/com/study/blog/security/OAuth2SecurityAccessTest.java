@@ -41,6 +41,9 @@ class OAuth2SecurityAccessTest {
 
         mockMvc.perform(get("/api/comments/posts/1"))
                 .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/comments/1/replies"))
+                .andExpect(status().is4xxClientError());
     }
 
     @Test

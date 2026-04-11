@@ -91,7 +91,8 @@ class BlogProfileServiceTest {
                 1,
                 LocalDateTime.of(2026, 3, 2, 9, 0),
                 new PostContractDto.AuthorSummary(1L, "sample_author", "테스트작성자", "sample-nick", "https://cdn.example.com/avatar.jpg"),
-                List.of("https://cdn.example.com/first-image.jpg"));
+                List.of("https://cdn.example.com/first-image.jpg"),
+                null);
         Page<PostContractDto.PostListItem> postPage = new PageImpl<>(List.of(post), PageRequest.of(0, 10), 1);
 
         when(userRepository.findByUsernameAndDeletedYn("sample_author", "N"))

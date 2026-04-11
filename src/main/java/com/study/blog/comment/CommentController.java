@@ -41,6 +41,15 @@ public class CommentController {
     }
 
     /**
+     * 특정 댓글의 답글 목록 조회
+     */
+    @GetMapping("/{commentId}/replies")
+    public ResponseEntity<ApiResponseTemplate<List<CommentDto.Response>>> getReplies(@PathVariable Long commentId) {
+        List<CommentDto.Response> replies = commentService.getRepliesByCommentId(commentId);
+        return ApiResponseFactory.ok(replies);
+    }
+
+    /**
      * 댓글 생성
      */
     @PostMapping

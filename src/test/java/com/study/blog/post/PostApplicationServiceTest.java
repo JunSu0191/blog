@@ -3,6 +3,8 @@ package com.study.blog.post;
 import com.study.blog.category.Category;
 import com.study.blog.category.CategoryRepository;
 import com.study.blog.post.dto.PostContractDto;
+import com.study.blog.series.SeriesService;
+import com.study.blog.series.SeriesMembershipService;
 import com.study.blog.tag.PostTag;
 import com.study.blog.tag.PostTagRepository;
 import com.study.blog.tag.Tag;
@@ -48,6 +50,10 @@ class PostApplicationServiceTest {
     private UserProfileRepository userProfileRepository;
     @Mock
     private ScheduledPostPublicationService scheduledPostPublicationService;
+    @Mock
+    private SeriesMembershipService seriesMembershipService;
+    @Mock
+    private SeriesService seriesService;
 
     private PostApplicationService postApplicationService;
 
@@ -65,6 +71,8 @@ class PostApplicationServiceTest {
                 postContentProcessor,
                 postSlugService,
                 postTagAssignmentService,
+                seriesService,
+                seriesMembershipService,
                 scheduledPostPublicationService);
     }
 

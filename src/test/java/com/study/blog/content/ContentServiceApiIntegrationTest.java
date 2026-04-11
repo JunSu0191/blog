@@ -218,7 +218,8 @@ class ContentServiceApiIntegrationTest {
         String createSeriesBody = objectMapper.writeValueAsString(Map.of(
                 "title", "React Series",
                 "slug", "react-series",
-                "description", "React 연재"
+                "description", "React 연재",
+                "coverImageUrl", "https://example.com/react-series.png"
         ));
 
         String createSeriesResponse = mockMvc.perform(post("/api/v1/series")
@@ -231,18 +232,18 @@ class ContentServiceApiIntegrationTest {
 
         long seriesId = objectMapper.readTree(createSeriesResponse).path("data").path("id").asLong();
 
-        mockMvc.perform(post("/api/v1/posts/{postId}/series", reactPost.getId())
+        mockMvc.perform(post("/api/v1/series/{seriesId}/posts", seriesId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "seriesId", seriesId,
+                                "postId", reactPost.getId(),
                                 "order", 1
                         ))))
                 .andExpect(status().isOk());
 
-        mockMvc.perform(post("/api/v1/posts/{postId}/series", secondReactPost.getId())
+        mockMvc.perform(post("/api/v1/series/{seriesId}/posts", seriesId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
-                                "seriesId", seriesId,
+                                "postId", secondReactPost.getId(),
                                 "order", 2
                         ))))
                 .andExpect(status().isOk());
@@ -255,9 +256,18 @@ class ContentServiceApiIntegrationTest {
 
         JsonNode data = objectMapper.readTree(detailResponse).path("data");
         assertThat(data.path("title").asText()).isEqualTo("React Series");
+        assertThat(data.path("coverImageUrl").asText()).isEqualTo("https://example.com/react-series.png");
         assertThat(data.path("postCount").asInt()).isEqualTo(2);
         assertThat(data.path("posts").get(0).path("title").asText()).isEqualTo("React Guide");
         assertThat(data.path("posts").get(1).path("title").asText()).isEqualTo("React Patterns");
+        assertThat(data.path("posts").get(0).path("series").path("order").asInt()).isEqualTo(1);
+
+        String postsResponse = mockMvc.perform(get("/api/v1/series/{seriesId}/posts?page=0&size=20", seriesId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        assertThat(objectMapper.readTree(postsResponse).path("data").path("content").size()).isEqualTo(2);
 
         String listResponse = mockMvc.perform(get("/api/v1/series?page=0&size=20"))
                 .andExpect(status().isOk())
@@ -265,6 +275,43 @@ class ContentServiceApiIntegrationTest {
                 .getResponse()
                 .getContentAsString();
         assertThat(objectMapper.readTree(listResponse).path("data").path("content").size()).isEqualTo(1);
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void seriesApiShouldSupportLegacyApiPrefixAndReturnNotFoundForMissingSeries() throws Exception {
+        String createSeriesResponse = mockMvc.perform(post("/api/series")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", "Legacy Series",
+                                "slug", "legacy-series"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long seriesId = objectMapper.readTree(createSeriesResponse).path("data").path("id").asLong();
+
+        String detailResponse = mockMvc.perform(get("/api/series/{seriesId}", seriesId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode detailData = objectMapper.readTree(detailResponse).path("data");
+        assertThat(detailData.path("id").asLong()).isEqualTo(seriesId);
+        assertThat(detailData.path("title").asText()).isEqualTo("Legacy Series");
+
+        String missingResponse = mockMvc.perform(get("/api/series/{seriesId}", 999999L))
+                .andExpect(status().isNotFound())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode missingData = objectMapper.readTree(missingResponse);
+        assertThat(missingData.path("message").asText()).isEqualTo("시리즈를 찾을 수 없습니다.");
+        assertThat(missingData.path("data").path("code").asText()).isEqualTo("series_not_found");
     }
 
     @Test

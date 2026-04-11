@@ -14,6 +14,15 @@ public final class PostContractDto {
     private PostContractDto() {
     }
 
+    public record SeriesSummary(
+            Long id,
+            String title,
+            String slug,
+            Integer order,
+            Long postCount
+    ) {
+    }
+
     public record PostWriteRequest(
             @NotBlank @Size(max = 200) String title,
             @Size(max = 255) String subtitle,
@@ -22,7 +31,10 @@ public final class PostContractDto {
             List<String> tags,
             @Size(max = 500) String thumbnailUrl,
             @NotNull JsonNode contentJson,
-            Boolean publishNow
+            Boolean publishNow,
+            Long seriesId,
+            @Size(max = 200) String seriesTitle,
+            Integer seriesOrder
     ) {
     }
 
@@ -31,7 +43,10 @@ public final class PostContractDto {
             @Size(max = 255) String subtitle,
             Long categoryId,
             @Size(max = 500) String thumbnailUrl,
-            @NotNull JsonNode contentJson
+            @NotNull JsonNode contentJson,
+            Long seriesId,
+            @Size(max = 200) String seriesTitle,
+            Integer seriesOrder
     ) {
     }
 
@@ -81,7 +96,8 @@ public final class PostContractDto {
             Integer readTimeMinutes,
             LocalDateTime publishedAt,
             AuthorSummary author,
-            List<String> imageUrls
+            List<String> imageUrls,
+            SeriesSummary series
     ) {
     }
 
@@ -107,7 +123,8 @@ public final class PostContractDto {
             Integer readTimeMinutes,
             LocalDateTime publishedAt,
             LocalDateTime createdAt,
-            LocalDateTime updatedAt
+            LocalDateTime updatedAt,
+            SeriesSummary series
     ) {
     }
 
@@ -134,6 +151,7 @@ public final class PostContractDto {
             String thumbnailUrl,
             JsonNode contentJson,
             String contentHtml,
+            SeriesSummary series,
             LocalDateTime autosavedAt,
             LocalDateTime updatedAt,
             LocalDateTime createdAt

@@ -1,6 +1,7 @@
 package com.study.blog.post;
 
 import com.study.blog.category.Category;
+import com.study.blog.series.PostSeries;
 import com.study.blog.user.User;
 import jakarta.persistence.*;
 import lombok.*;
@@ -31,6 +32,10 @@ public class PostDraft {
     @JoinColumn(name = "category_id")
     private Category category;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "series_id")
+    private PostSeries series;
+
     @Column(nullable = false, length = 200)
     private String title;
 
@@ -47,6 +52,9 @@ public class PostDraft {
 
     @Column(name = "thumbnail_url", length = 500)
     private String thumbnailUrl;
+
+    @Column(name = "series_order")
+    private Integer seriesOrder;
 
     @Column(name = "autosaved_at", nullable = false)
     @Builder.Default

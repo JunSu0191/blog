@@ -7,6 +7,9 @@ import com.study.blog.category.CategoryRepository;
 import com.study.blog.core.exception.CodedApiException;
 import com.study.blog.post.PostContentProcessor.ProcessedContent;
 import com.study.blog.post.dto.PostContractDto;
+import com.study.blog.series.PostSeries;
+import com.study.blog.series.SeriesService;
+import com.study.blog.series.SeriesMembershipService;
 import com.study.blog.tag.PostTag;
 import com.study.blog.tag.PostTagRepository;
 import com.study.blog.user.User;
@@ -43,6 +46,8 @@ public class PostApplicationService {
     private final PostContentProcessor postContentProcessor;
     private final PostSlugService postSlugService;
     private final PostTagAssignmentService postTagAssignmentService;
+    private final SeriesService seriesService;
+    private final SeriesMembershipService seriesMembershipService;
     private final ScheduledPostPublicationService scheduledPostPublicationService;
 
     public PostApplicationService(PostRepository postRepository,
@@ -53,6 +58,8 @@ public class PostApplicationService {
                                   PostContentProcessor postContentProcessor,
                                   PostSlugService postSlugService,
                                   PostTagAssignmentService postTagAssignmentService,
+                                  SeriesService seriesService,
+                                  SeriesMembershipService seriesMembershipService,
                                   ScheduledPostPublicationService scheduledPostPublicationService) {
         this.postRepository = postRepository;
         this.postTagRepository = postTagRepository;
@@ -62,6 +69,8 @@ public class PostApplicationService {
         this.postContentProcessor = postContentProcessor;
         this.postSlugService = postSlugService;
         this.postTagAssignmentService = postTagAssignmentService;
+        this.seriesService = seriesService;
+        this.seriesMembershipService = seriesMembershipService;
         this.scheduledPostPublicationService = scheduledPostPublicationService;
     }
 
@@ -87,6 +96,7 @@ public class PostApplicationService {
         post.setSlug(postSlugService.generateUniqueSlug(post.getTitle(), null));
 
         Post saved = postRepository.save(post);
+        syncSeries(saved, authorId, request.seriesId(), request.seriesTitle(), request.seriesOrder(), false);
         postTagAssignmentService.replaceTags(saved, request.tagIds(), request.tags());
 
         Map<Long, List<PostContractDto.TagSummary>> tagsByPostId = getTagsByPostIds(List.of(saved.getId()));
@@ -114,6 +124,7 @@ public class PostApplicationService {
         applyContent(post, request.publishNow(), processed);
 
         Post saved = postRepository.save(post);
+        syncSeries(saved, actorUserId, request.seriesId(), request.seriesTitle(), request.seriesOrder(), true);
         postTagAssignmentService.replaceTags(saved, request.tagIds(), request.tags());
 
         Map<Long, List<PostContractDto.TagSummary>> tagsByPostId = getTagsByPostIds(List.of(saved.getId()));
@@ -129,6 +140,7 @@ public class PostApplicationService {
         Post post = getPostOrThrow(postId);
         assertAuthor(post, actorUserId);
 
+        seriesMembershipService.syncPostSeries(actorUserId, post, null, null);
         post.setDeletedYn("Y");
         post.setDeletedAt(LocalDateTime.now());
         post.setUpdatedAt(LocalDateTime.now());
@@ -154,13 +166,15 @@ public class PostApplicationService {
         Map<Long, String> profileImageByUserId = getProfileImageByUserId(page.getContent());
         Map<Long, List<PostContractDto.TagSummary>> tagsByPostId = getTagsByPostIds(extractPostIds(page.getContent()));
         Map<Long, List<String>> imageUrlsByPostId = getImageUrlsByPostId(page.getContent());
+        Map<Long, Long> publicSeriesPostCountBySeriesId = getPublicSeriesPostCountBySeriesId(page.getContent());
 
         List<PostContractDto.PostListItem> content = page.getContent().stream()
                 .map(post -> toListItem(
                         post,
                         tagsByPostId.getOrDefault(post.getId(), List.of()),
                         profileImageByUserId.get(post.getUser().getId()),
-                        imageUrlsByPostId.getOrDefault(post.getId(), List.of())))
+                        imageUrlsByPostId.getOrDefault(post.getId(), List.of()),
+                        publicSeriesPostCountBySeriesId))
                 .toList();
 
         return new PageImpl<>(content, normalizedPageable, page.getTotalElements());
@@ -186,13 +200,15 @@ public class PostApplicationService {
         Map<Long, String> profileImageByUserId = getProfileImageByUserId(page.getContent());
         Map<Long, List<PostContractDto.TagSummary>> tagsByPostId = getTagsByPostIds(extractPostIds(page.getContent()));
         Map<Long, List<String>> imageUrlsByPostId = getImageUrlsByPostId(page.getContent());
+        Map<Long, Long> publicSeriesPostCountBySeriesId = getPublicSeriesPostCountBySeriesId(page.getContent());
 
         List<PostContractDto.PostListItem> content = page.getContent().stream()
                 .map(post -> toListItem(
                         post,
                         tagsByPostId.getOrDefault(post.getId(), List.of()),
                         profileImageByUserId.get(post.getUser().getId()),
-                        imageUrlsByPostId.getOrDefault(post.getId(), List.of())))
+                        imageUrlsByPostId.getOrDefault(post.getId(), List.of()),
+                        publicSeriesPostCountBySeriesId))
                 .toList();
 
         return new PageImpl<>(content, normalizedPageable, page.getTotalElements());
@@ -419,6 +435,23 @@ public class PostApplicationService {
                 .toList();
     }
 
+    private Map<Long, Long> getPublicSeriesPostCountBySeriesId(Collection<Post> posts) {
+        if (posts == null || posts.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<Long> seriesIds = posts.stream()
+                .map(Post::getSeries)
+                .filter(Objects::nonNull)
+                .map(series -> series.getId())
+                .collect(Collectors.toSet());
+        if (seriesIds.isEmpty()) {
+            return Map.of();
+        }
+        return postRepository.findPublicSeriesPostCounts(seriesIds).stream()
+                .collect(Collectors.toMap(SeriesPostCountProjection::getSeriesId, SeriesPostCountProjection::getPostCount));
+    }
+
     private void applyContent(Post post, Boolean publishNow, ProcessedContent processedContent) {
         post.setContentJson(processedContent.contentJson());
         post.setContentHtml(processedContent.contentHtml());
@@ -576,6 +609,22 @@ public class PostApplicationService {
                 imageUrls.add(src);
             }
         }
+        if ("editorialImage".equals(node.path("type").asText(""))) {
+            String src = normalizeNullable(node.path("attrs").path("src").asText(null));
+            if (src != null) {
+                imageUrls.add(src);
+            }
+        }
+        if ("twoColumnImages".equals(node.path("type").asText(""))) {
+            String leftSrc = normalizeNullable(node.path("attrs").path("leftSrc").asText(null));
+            String rightSrc = normalizeNullable(node.path("attrs").path("rightSrc").asText(null));
+            if (leftSrc != null) {
+                imageUrls.add(leftSrc);
+            }
+            if (rightSrc != null) {
+                imageUrls.add(rightSrc);
+            }
+        }
 
         node.elements().forEachRemaining(child -> collectImageUrls(child, imageUrls));
     }
@@ -601,7 +650,8 @@ public class PostApplicationService {
     private PostContractDto.PostListItem toListItem(Post post,
                                                     List<PostContractDto.TagSummary> tags,
                                                     String profileImageUrl,
-                                                    List<String> imageUrls) {
+                                                    List<String> imageUrls,
+                                                    Map<Long, Long> publicSeriesPostCountBySeriesId) {
         PostContractDto.AuthorSummary author = new PostContractDto.AuthorSummary(
                 post.getUser().getId(),
                 post.getUser().getUsername(),
@@ -626,7 +676,8 @@ public class PostApplicationService {
                 post.getReadTimeMinutes() == null ? 0 : post.getReadTimeMinutes(),
                 post.getPublishedAt(),
                 author,
-                imageUrls == null ? List.of() : imageUrls);
+                imageUrls == null ? List.of() : imageUrls,
+                toSeriesSummary(post, publicSeriesPostCountBySeriesId));
     }
 
     private PostContractDto.PostDetailResponse toDetailResponse(Post post,
@@ -663,7 +714,8 @@ public class PostApplicationService {
                 post.getReadTimeMinutes() == null ? 0 : post.getReadTimeMinutes(),
                 post.getPublishedAt(),
                 post.getCreatedAt(),
-                post.getUpdatedAt());
+                post.getUpdatedAt(),
+                toSeriesSummary(post, getPublicSeriesPostCountBySeriesId(List.of(post))));
     }
 
     private PostContractDto.CategorySummary toCategorySummary(Category category) {
@@ -690,6 +742,42 @@ public class PostApplicationService {
 
     private long defaultLong(Long value) {
         return value == null ? 0L : value;
+    }
+
+    private PostContractDto.SeriesSummary toSeriesSummary(Post post, Map<Long, Long> publicSeriesPostCountBySeriesId) {
+        if (post.getSeries() == null) {
+            return null;
+        }
+        return new PostContractDto.SeriesSummary(
+                post.getSeries().getId(),
+                post.getSeries().getTitle(),
+                post.getSeries().getSlug(),
+                post.getSeriesOrder(),
+                publicSeriesPostCountBySeriesId.getOrDefault(post.getSeries().getId(), 0L));
+    }
+
+    private void syncSeries(Post post,
+                            Long actorUserId,
+                            Long requestedSeriesId,
+                            String requestedSeriesTitle,
+                            Integer requestedSeriesOrder,
+                            boolean preserveCurrentSeriesOnOrderOnlyUpdate) {
+        boolean hasSeriesSelection = requestedSeriesId != null || normalizeNullable(requestedSeriesTitle) != null;
+        if (!hasSeriesSelection && requestedSeriesOrder == null) {
+            return;
+        }
+
+        Long targetSeriesId;
+        if (hasSeriesSelection) {
+            PostSeries targetSeries = seriesService.resolveOwnedSeries(actorUserId, requestedSeriesId, requestedSeriesTitle);
+            targetSeriesId = targetSeries == null ? null : targetSeries.getId();
+        } else if (preserveCurrentSeriesOnOrderOnlyUpdate) {
+            targetSeriesId = post.getSeries() == null ? null : post.getSeries().getId();
+        } else {
+            targetSeriesId = null;
+        }
+
+        seriesMembershipService.syncPostSeries(actorUserId, post, targetSeriesId, requestedSeriesOrder);
     }
 
     private double computeRelatedScore(Post source,

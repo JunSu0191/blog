@@ -9,6 +9,7 @@ import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.HashMap;
 import java.util.List;
@@ -80,6 +81,18 @@ public class GlobalExceptionHandler {
         String message = "업로드 가능한 최대 파일 크기를 초과했습니다.";
         Map<String, Object> error = Map.of(
                 "code", PostErrorCode.UPLOAD_FAILED.code(),
+                "message", message,
+                "status", status.value());
+        return ResponseEntity.status(status)
+                .body(new ApiResponseTemplate<>(error, status, message, false));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiResponseTemplate<Map<String, Object>>> handleNoResourceFound(NoResourceFoundException ex) {
+        HttpStatus status = HttpStatus.NOT_FOUND;
+        String message = "요청한 경로를 찾을 수 없습니다.";
+        Map<String, Object> error = Map.of(
+                "code", "resource_not_found",
                 "message", message,
                 "status", status.value());
         return ResponseEntity.status(status)

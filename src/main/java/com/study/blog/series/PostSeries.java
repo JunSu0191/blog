@@ -41,6 +41,9 @@ public class PostSeries {
     @Column(length = 1000)
     private String description;
 
+    @Column(name = "cover_image_url", length = 500)
+    private String coverImageUrl;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private LocalDateTime createdAt = LocalDateTime.now();

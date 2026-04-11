@@ -8,7 +8,8 @@ import com.study.blog.core.exception.CodedApiException;
 import com.study.blog.post.PostContentProcessor.ProcessedContent;
 import com.study.blog.post.dto.PostManagementDto;
 import com.study.blog.series.PostSeries;
-import com.study.blog.series.PostSeriesRepository;
+import com.study.blog.series.SeriesService;
+import com.study.blog.series.SeriesMembershipService;
 import com.study.blog.tag.PostTag;
 import com.study.blog.tag.PostTagRepository;
 import com.study.blog.user.User;
@@ -40,7 +41,8 @@ public class PostManagementService {
     private final PostContentProcessor postContentProcessor;
     private final PostSlugService postSlugService;
     private final PostTagAssignmentService postTagAssignmentService;
-    private final PostSeriesRepository postSeriesRepository;
+    private final SeriesService seriesService;
+    private final SeriesMembershipService seriesMembershipService;
     private final ScheduledPostPublicationService scheduledPostPublicationService;
 
     public PostManagementService(PostRepository postRepository,
@@ -50,7 +52,8 @@ public class PostManagementService {
                                  PostContentProcessor postContentProcessor,
                                  PostSlugService postSlugService,
                                  PostTagAssignmentService postTagAssignmentService,
-                                 PostSeriesRepository postSeriesRepository,
+                                 SeriesService seriesService,
+                                 SeriesMembershipService seriesMembershipService,
                                  ScheduledPostPublicationService scheduledPostPublicationService) {
         this.postRepository = postRepository;
         this.categoryRepository = categoryRepository;
@@ -59,7 +62,8 @@ public class PostManagementService {
         this.postContentProcessor = postContentProcessor;
         this.postSlugService = postSlugService;
         this.postTagAssignmentService = postTagAssignmentService;
-        this.postSeriesRepository = postSeriesRepository;
+        this.seriesService = seriesService;
+        this.seriesMembershipService = seriesMembershipService;
         this.scheduledPostPublicationService = scheduledPostPublicationService;
     }
 
@@ -78,6 +82,7 @@ public class PostManagementService {
 
         applyUpsertRequest(post, request, processedContent, authorUserId, true);
         Post saved = postRepository.save(post);
+        syncSeries(saved, authorUserId, request.seriesId(), request.seriesTitle(), request.seriesOrder(), false);
         postTagAssignmentService.replaceTags(saved, request.tagIds(), request.tags());
         return toPostResponse(saved);
     }
@@ -87,6 +92,7 @@ public class PostManagementService {
         ProcessedContent processedContent = postContentProcessor.process(request.contentJson());
         applyUpsertRequest(post, request, processedContent, actorUserId, false);
         Post saved = postRepository.save(post);
+        syncSeries(saved, actorUserId, request.seriesId(), request.seriesTitle(), request.seriesOrder(), true);
         postTagAssignmentService.replaceTags(saved, request.tagIds(), request.tags());
         return toPostResponse(saved);
     }
@@ -122,8 +128,12 @@ public class PostManagementService {
                 pageable);
 
         Map<Long, List<ContentDto.TagRef>> tagsByPostId = getTagsByPostId(page.getContent());
+        Map<Long, Long> publicSeriesPostCountBySeriesId = getPublicSeriesPostCountBySeriesId(page.getContent());
         List<PostManagementDto.PostSummaryResponse> content = page.getContent().stream()
-                .map(post -> toPostSummaryResponse(post, tagsByPostId.getOrDefault(post.getId(), List.of())))
+                .map(post -> toPostSummaryResponse(
+                        post,
+                        tagsByPostId.getOrDefault(post.getId(), List.of()),
+                        publicSeriesPostCountBySeriesId))
                 .toList();
         return new PageImpl<>(content, pageable, page.getTotalElements());
     }
@@ -151,7 +161,6 @@ public class PostManagementService {
 
         applyContent(post, processedContent);
         applyLifecycle(post, request.status(), request.publishedAt(), request.scheduledAt(), create);
-        applySeries(post, actorUserId, request.seriesId(), request.seriesOrder());
         post.setUpdatedAt(LocalDateTime.now());
     }
 
@@ -194,30 +203,6 @@ public class PostManagementService {
         post.setPublishedAt(null);
     }
 
-    private void applySeries(Post post, Long actorUserId, Long seriesId, Integer seriesOrder) {
-        if (seriesId == null) {
-            post.setSeries(null);
-            post.setSeriesOrder(null);
-            return;
-        }
-
-        Long previousSeriesId = post.getSeries() == null ? null : post.getSeries().getId();
-        Integer previousSeriesOrder = post.getSeriesOrder();
-        PostSeries series = postSeriesRepository.findByIdAndOwner_Id(seriesId, actorUserId)
-                .orElseThrow(() -> new IllegalArgumentException("시리즈를 찾을 수 없습니다."));
-        post.setSeries(series);
-        if (seriesOrder == null || seriesOrder <= 0) {
-            Integer currentMax = postRepository.findMaxSeriesOrder(series.getId());
-            if (Objects.equals(previousSeriesId, series.getId()) && previousSeriesOrder != null) {
-                post.setSeriesOrder(previousSeriesOrder);
-            } else {
-                post.setSeriesOrder((currentMax == null ? 0 : currentMax) + 1);
-            }
-        } else {
-            post.setSeriesOrder(seriesOrder);
-        }
-    }
-
     private Map<Long, List<ContentDto.TagRef>> getTagsByPostId(List<Post> posts) {
         if (posts == null || posts.isEmpty()) {
             return Map.of();
@@ -234,9 +219,31 @@ public class PostManagementService {
         return result;
     }
 
+    private Map<Long, Long> getPublicSeriesPostCountBySeriesId(List<Post> posts) {
+        if (posts == null || posts.isEmpty()) {
+            return Map.of();
+        }
+
+        List<Long> seriesIds = posts.stream()
+                .map(Post::getSeries)
+                .filter(Objects::nonNull)
+                .map(series -> series.getId())
+                .distinct()
+                .toList();
+        if (seriesIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, Long> result = new LinkedHashMap<>();
+        for (SeriesPostCountProjection projection : postRepository.findPublicSeriesPostCounts(seriesIds)) {
+            result.put(projection.getSeriesId(), projection.getPostCount());
+        }
+        return result;
+    }
+
     private PostManagementDto.PostResponse toPostResponse(Post post) {
         Map<Long, List<ContentDto.TagRef>> tagsByPostId = getTagsByPostId(List.of(post));
         JsonNode contentJson = postContentProcessor.parseJson(post.getContentJson());
+        Map<Long, Long> publicSeriesPostCountBySeriesId = getPublicSeriesPostCountBySeriesId(List.of(post));
         return new PostManagementDto.PostResponse(
                 post.getId(),
                 post.getTitle(),
@@ -259,11 +266,7 @@ public class PostManagementService {
                         post.getUser().getId(),
                         post.getUser().getUsername(),
                         post.getUser().getName()),
-                post.getSeries() == null ? null : new PostManagementDto.SeriesRef(
-                        post.getSeries().getId(),
-                        post.getSeries().getTitle(),
-                        post.getSeries().getSlug(),
-                        post.getSeriesOrder()),
+                toSeriesRef(post, publicSeriesPostCountBySeriesId),
                 contentJson,
                 post.getContentHtml(),
                 post.getReadTimeMinutes() == null ? 0 : post.getReadTimeMinutes(),
@@ -271,7 +274,9 @@ public class PostManagementService {
                 post.getUpdatedAt());
     }
 
-    private PostManagementDto.PostSummaryResponse toPostSummaryResponse(Post post, List<ContentDto.TagRef> tags) {
+    private PostManagementDto.PostSummaryResponse toPostSummaryResponse(Post post,
+                                                                        List<ContentDto.TagRef> tags,
+                                                                        Map<Long, Long> publicSeriesPostCountBySeriesId) {
         return new PostManagementDto.PostSummaryResponse(
                 post.getId(),
                 post.getTitle(),
@@ -287,12 +292,20 @@ public class PostManagementService {
                         post.getCategory().getName(),
                         post.getCategory().getSlug()),
                 tags,
-                post.getSeries() == null ? null : new PostManagementDto.SeriesRef(
-                        post.getSeries().getId(),
-                        post.getSeries().getTitle(),
-                        post.getSeries().getSlug(),
-                        post.getSeriesOrder()),
+                toSeriesRef(post, publicSeriesPostCountBySeriesId),
                 post.getUpdatedAt());
+    }
+
+    private PostManagementDto.SeriesRef toSeriesRef(Post post, Map<Long, Long> publicSeriesPostCountBySeriesId) {
+        if (post.getSeries() == null) {
+            return null;
+        }
+        return new PostManagementDto.SeriesRef(
+                post.getSeries().getId(),
+                post.getSeries().getTitle(),
+                post.getSeries().getSlug(),
+                post.getSeriesOrder(),
+                publicSeriesPostCountBySeriesId.getOrDefault(post.getSeries().getId(), 0L));
     }
 
     private String resolveSlug(String requestedSlug, String title, Long excludePostId) {
@@ -362,5 +375,29 @@ public class PostManagementService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void syncSeries(Post post,
+                            Long actorUserId,
+                            Long requestedSeriesId,
+                            String requestedSeriesTitle,
+                            Integer requestedSeriesOrder,
+                            boolean preserveCurrentSeriesOnOrderOnlyUpdate) {
+        boolean hasSeriesSelection = requestedSeriesId != null || normalizeNullable(requestedSeriesTitle) != null;
+        if (!hasSeriesSelection && requestedSeriesOrder == null) {
+            return;
+        }
+
+        Long targetSeriesId;
+        if (hasSeriesSelection) {
+            PostSeries targetSeries = seriesService.resolveOwnedSeries(actorUserId, requestedSeriesId, requestedSeriesTitle);
+            targetSeriesId = targetSeries == null ? null : targetSeries.getId();
+        } else if (preserveCurrentSeriesOnOrderOnlyUpdate) {
+            targetSeriesId = post.getSeries() == null ? null : post.getSeries().getId();
+        } else {
+            targetSeriesId = null;
+        }
+
+        seriesMembershipService.syncPostSeries(actorUserId, post, targetSeriesId, requestedSeriesOrder);
     }
 }

@@ -7,6 +7,8 @@ import com.study.blog.category.CategoryRepository;
 import com.study.blog.core.exception.CodedApiException;
 import com.study.blog.post.PostContentProcessor.ProcessedContent;
 import com.study.blog.post.dto.PostContractDto;
+import com.study.blog.series.PostSeries;
+import com.study.blog.series.SeriesService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import org.springframework.data.domain.Page;
@@ -16,6 +18,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @Transactional
@@ -27,15 +31,21 @@ public class PostDraftService {
     private final CategoryRepository categoryRepository;
     private final UserRepository userRepository;
     private final PostContentProcessor postContentProcessor;
+    private final PostRepository postRepository;
+    private final SeriesService seriesService;
 
     public PostDraftService(PostDraftRepository postDraftRepository,
                             CategoryRepository categoryRepository,
                             UserRepository userRepository,
-                            PostContentProcessor postContentProcessor) {
+                            PostContentProcessor postContentProcessor,
+                            PostRepository postRepository,
+                            SeriesService seriesService) {
         this.postDraftRepository = postDraftRepository;
         this.categoryRepository = categoryRepository;
         this.userRepository = userRepository;
         this.postContentProcessor = postContentProcessor;
+        this.postRepository = postRepository;
+        this.seriesService = seriesService;
     }
 
     public PostContractDto.DraftResponse createDraft(PostContractDto.DraftWriteRequest request, Long authorId) {
@@ -55,6 +65,8 @@ public class PostDraftService {
                 .updatedAt(LocalDateTime.now())
                 .createdAt(LocalDateTime.now())
                 .build();
+
+        applySeries(draft, authorId, request.seriesId(), request.seriesTitle(), request.seriesOrder());
 
         PostDraft saved = postDraftRepository.save(draft);
         return toResponse(saved);
@@ -77,6 +89,7 @@ public class PostDraftService {
         draft.setContentHtml(processed.contentHtml());
         draft.setAutosavedAt(LocalDateTime.now());
         draft.setUpdatedAt(LocalDateTime.now());
+        applySeries(draft, actorUserId, request.seriesId(), request.seriesTitle(), request.seriesOrder());
 
         PostDraft saved = postDraftRepository.save(draft);
         return toResponse(saved);
@@ -153,6 +166,7 @@ public class PostDraftService {
                 draft.getThumbnailUrl(),
                 contentJson,
                 draft.getContentHtml(),
+                toSeriesSummary(draft),
                 draft.getAutosavedAt(),
                 draft.getUpdatedAt(),
                 draft.getCreatedAt());
@@ -173,5 +187,38 @@ public class PostDraftService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private void applySeries(PostDraft draft,
+                             Long actorUserId,
+                             Long requestedSeriesId,
+                             String requestedSeriesTitle,
+                             Integer requestedSeriesOrder) {
+        boolean hasSeriesSelection = requestedSeriesId != null || normalizeNullable(requestedSeriesTitle) != null;
+        if (!hasSeriesSelection && requestedSeriesOrder == null) {
+            return;
+        }
+
+        if (hasSeriesSelection) {
+            PostSeries series = seriesService.resolveOwnedSeries(actorUserId, requestedSeriesId, requestedSeriesTitle);
+            draft.setSeries(series);
+        }
+
+        draft.setSeriesOrder(requestedSeriesOrder);
+    }
+
+    private PostContractDto.SeriesSummary toSeriesSummary(PostDraft draft) {
+        if (draft.getSeries() == null) {
+            return null;
+        }
+
+        Map<Long, Long> counts = postRepository.findPublicSeriesPostCounts(List.of(draft.getSeries().getId())).stream()
+                .collect(java.util.stream.Collectors.toMap(SeriesPostCountProjection::getSeriesId, SeriesPostCountProjection::getPostCount));
+        return new PostContractDto.SeriesSummary(
+                draft.getSeries().getId(),
+                draft.getSeries().getTitle(),
+                draft.getSeries().getSlug(),
+                draft.getSeriesOrder(),
+                counts.getOrDefault(draft.getSeries().getId(), 0L));
     }
 }

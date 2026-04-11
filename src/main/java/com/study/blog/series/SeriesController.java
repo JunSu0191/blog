@@ -4,6 +4,7 @@ import com.study.blog.core.response.ApiResponseFactory;
 import com.study.blog.core.response.ApiResponseTemplate;
 import com.study.blog.core.response.PageResponse;
 import com.study.blog.core.security.CurrentUserResolver;
+import com.study.blog.content.dto.ContentDto;
 import com.study.blog.series.dto.SeriesDto;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -15,7 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping({"/api/v1", "/api"})
 @Tag(name = "Series")
 public class SeriesController {
 
@@ -41,6 +42,15 @@ public class SeriesController {
         return ApiResponseFactory.ok(seriesService.getSeries(seriesId));
     }
 
+    @GetMapping("/series/{seriesId}/posts")
+    @Operation(summary = "시리즈 게시글 목록 조회")
+    public ResponseEntity<ApiResponseTemplate<PageResponse<ContentDto.PostCard>>> listSeriesPosts(
+            @PathVariable Long seriesId,
+            @PageableDefault(size = 20) Pageable pageable) {
+        Page<ContentDto.PostCard> page = seriesService.listSeriesPosts(seriesId, pageable);
+        return ApiResponseFactory.ok(page);
+    }
+
     @PostMapping("/series")
     @Operation(summary = "시리즈 생성")
     public ResponseEntity<ApiResponseTemplate<SeriesDto.DetailResponse>> createSeries(
@@ -48,6 +58,16 @@ public class SeriesController {
             @Valid @RequestBody SeriesDto.UpsertRequest request) {
         Long userId = currentUserResolver.resolveFromRest(xUserId);
         return ApiResponseFactory.ok(seriesService.createSeries(userId, request));
+    }
+
+    @PatchMapping("/series/{seriesId}")
+    @Operation(summary = "시리즈 수정")
+    public ResponseEntity<ApiResponseTemplate<SeriesDto.DetailResponse>> patchSeries(
+            @PathVariable Long seriesId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @Valid @RequestBody SeriesDto.UpsertRequest request) {
+        Long userId = currentUserResolver.resolveFromRest(xUserId);
+        return ApiResponseFactory.ok(seriesService.updateSeries(seriesId, userId, request));
     }
 
     @PutMapping("/series/{seriesId}")
@@ -68,5 +88,37 @@ public class SeriesController {
             @Valid @RequestBody SeriesDto.AssignPostRequest request) {
         Long userId = currentUserResolver.resolveFromRest(xUserId);
         return ApiResponseFactory.ok(seriesService.assignPost(userId, postId, request));
+    }
+
+    @PostMapping("/series/{seriesId}/posts")
+    @Operation(summary = "시리즈에 게시글 추가")
+    public ResponseEntity<ApiResponseTemplate<SeriesDto.AssignmentResponse>> addPostToSeries(
+            @PathVariable Long seriesId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @Valid @RequestBody SeriesDto.AddPostRequest request) {
+        Long userId = currentUserResolver.resolveFromRest(xUserId);
+        return ApiResponseFactory.ok(seriesService.addPost(userId, seriesId, request));
+    }
+
+    @PatchMapping("/series/{seriesId}/posts/{postId}")
+    @Operation(summary = "시리즈 내 게시글 순서 변경")
+    public ResponseEntity<ApiResponseTemplate<SeriesDto.AssignmentResponse>> updateSeriesPostOrder(
+            @PathVariable Long seriesId,
+            @PathVariable Long postId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @Valid @RequestBody SeriesDto.UpdateSeriesPostRequest request) {
+        Long userId = currentUserResolver.resolveFromRest(xUserId);
+        return ApiResponseFactory.ok(seriesService.updatePostOrder(userId, seriesId, postId, request));
+    }
+
+    @DeleteMapping("/series/{seriesId}/posts/{postId}")
+    @Operation(summary = "시리즈에서 게시글 제거")
+    public ResponseEntity<ApiResponseTemplate<Void>> removePostFromSeries(
+            @PathVariable Long seriesId,
+            @PathVariable Long postId,
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId) {
+        Long userId = currentUserResolver.resolveFromRest(xUserId);
+        seriesService.removePost(userId, seriesId, postId);
+        return ApiResponseFactory.noContent();
     }
 }

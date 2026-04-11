@@ -56,4 +56,82 @@ class PostContentProcessorTest {
     void parseTocJsonShouldReturnEmptyListWhenInvalidJson() {
         assertThat(postContentProcessor.parseTocJson("not-json")).isEmpty();
     }
+
+    @Test
+    void processShouldRenderCustomBlocksWithoutDroppingDataAttributes() throws Exception {
+        JsonNode contentJson = objectMapper.readTree("""
+                {
+                  "type": "doc",
+                  "content": [
+                    {
+                      "type": "callout",
+                      "attrs": { "tone": "tip" },
+                      "content": [
+                        {
+                          "type": "paragraph",
+                          "content": [{ "type": "text", "text": "팁 내용" }]
+                        }
+                      ]
+                    },
+                    {
+                      "type": "simpleTable",
+                      "attrs": {
+                        "hasHeaderRow": true,
+                        "rows": [
+                          ["제목", "항목"],
+                          ["A", "B"]
+                        ]
+                      }
+                    },
+                    {
+                      "type": "linkCard",
+                      "attrs": {
+                        "url": "https://example.com",
+                        "title": "example",
+                        "description": "설명",
+                        "domain": "example.com"
+                      }
+                    },
+                    {
+                      "type": "editorialImage",
+                      "attrs": {
+                        "src": "https://example.com/editorial.png",
+                        "alt": "이미지",
+                        "caption": "캡션"
+                      }
+                    },
+                    {
+                      "type": "twoColumnImages",
+                      "attrs": {
+                        "leftSrc": "https://example.com/left.png",
+                        "rightSrc": "https://example.com/right.png",
+                        "leftAlt": "왼쪽",
+                        "rightAlt": "오른쪽",
+                        "leftCaption": "캡션1",
+                        "rightCaption": "캡션2"
+                      }
+                    }
+                  ]
+                }
+                """);
+
+        ProcessedContent result = postContentProcessor.process(contentJson);
+
+        assertThat(result.contentJson()).contains("\"type\":\"callout\"");
+        assertThat(result.contentHtml()).contains("data-type=\"callout\"");
+        assertThat(result.contentHtml()).contains("data-callout-tone=\"tip\"");
+        assertThat(result.contentHtml()).contains("data-type=\"simpleTable\"");
+        assertThat(result.contentHtml()).contains("data-type=\"linkCard\"");
+        assertThat(result.contentHtml()).contains("data-type=\"editorialImage\"");
+        assertThat(result.contentHtml()).contains("data-type=\"twoColumnImages\"");
+        assertThat(result.contentHtml()).contains("data-two-column-side=\"left\"");
+        assertThat(result.contentHtml()).contains("bp-link-card");
+        assertThat(result.excerpt()).contains("팁 내용");
+    }
+
+    @Test
+    void parseJsonShouldReturnNullWhenSourceMissing() {
+        assertThat(postContentProcessor.parseJson(null)).isNull();
+        assertThat(postContentProcessor.parseJson("   ")).isNull();
+    }
 }

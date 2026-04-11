@@ -31,6 +31,15 @@ public final class ContentDto {
     ) {
     }
 
+    public record SeriesRef(
+            Long id,
+            String title,
+            String slug,
+            Integer order,
+            Long postCount
+    ) {
+    }
+
     public record FeaturedPost(
             Long id,
             String title,
@@ -50,6 +59,7 @@ public final class ContentDto {
             CategoryRef category,
             List<TagRef> tags,
             AuthorRef author,
+            SeriesRef series,
             LocalDateTime publishedAt,
             Integer readTimeMinutes,
             Long viewCount,

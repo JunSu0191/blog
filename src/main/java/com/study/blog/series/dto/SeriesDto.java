@@ -16,7 +16,8 @@ public final class SeriesDto {
     public record UpsertRequest(
             @NotBlank @Size(max = 200) String title,
             @Size(max = 220) String slug,
-            @Size(max = 1000) String description
+            @Size(max = 1000) String description,
+            @Size(max = 500) String coverImageUrl
     ) {
     }
 
@@ -26,13 +27,27 @@ public final class SeriesDto {
     ) {
     }
 
+    public record AddPostRequest(
+            @NotNull Long postId,
+            Integer order
+    ) {
+    }
+
+    public record UpdateSeriesPostRequest(
+            @NotNull Integer order
+    ) {
+    }
+
     public record SummaryResponse(
             Long id,
             String title,
             String slug,
             String description,
+            String coverImageUrl,
+            Long authorId,
             Long postCount,
             ContentDto.AuthorRef author,
+            LocalDateTime createdAt,
             LocalDateTime updatedAt
     ) {
     }
@@ -42,6 +57,8 @@ public final class SeriesDto {
             String title,
             String slug,
             String description,
+            String coverImageUrl,
+            Long authorId,
             Long postCount,
             ContentDto.AuthorRef author,
             List<ContentDto.PostCard> posts,
@@ -53,7 +70,9 @@ public final class SeriesDto {
     public record AssignmentResponse(
             Long postId,
             Long seriesId,
-            Integer order
+            Integer order,
+            LocalDateTime createdAt,
+            LocalDateTime updatedAt
     ) {
     }
 }

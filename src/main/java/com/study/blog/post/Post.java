@@ -113,6 +113,12 @@ public class Post {
     @Column(name = "series_order")
     private Integer seriesOrder;
 
+    @Column(name = "series_assigned_at")
+    private LocalDateTime seriesAssignedAt;
+
+    @Column(name = "series_updated_at")
+    private LocalDateTime seriesUpdatedAt;
+
     @Column(name = "read_time_minutes", nullable = false)
     @Builder.Default
     private Integer readTimeMinutes = 0;

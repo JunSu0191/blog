@@ -80,6 +80,28 @@ server {
         proxy_set_header X-Forwarded-Host $host;
     }
 
+    location /oauth2/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
+    location /login/oauth2/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
     location /api/attach-files/uploads/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -145,6 +167,7 @@ sudo systemctl reload nginx
 ## 6. 프론트 확인 항목
 
 - API 주소는 `https://blog-pause.com/api` 기준으로 사용합니다.
+- 소셜 로그인 시작 주소는 `https://blog-pause.com/oauth2/authorization/{provider}` 를 사용합니다.
 - WebSocket 주소를 직접 조합하면 `wss://blog-pause.com/ws` 를 사용합니다.
 - SockJS fallback 사용 시에도 페이지가 `https`이면 동일하게 `https` 기준으로 접속해야 합니다.
 - `https` 페이지에서 `http://` API 또는 `ws://` WebSocket을 호출하면 브라우저가 차단할 수 있습니다.

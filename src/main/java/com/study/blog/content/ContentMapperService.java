@@ -2,6 +2,8 @@ package com.study.blog.content;
 
 import com.study.blog.content.dto.ContentDto;
 import com.study.blog.post.Post;
+import com.study.blog.post.PostRepository;
+import com.study.blog.post.SeriesPostCountProjection;
 import com.study.blog.tag.PostTag;
 import com.study.blog.tag.PostTagRepository;
 import org.springframework.data.domain.Page;
@@ -15,6 +17,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -23,9 +27,11 @@ public class ContentMapperService {
     private static final String FLAG_NO = "N";
 
     private final PostTagRepository postTagRepository;
+    private final PostRepository postRepository;
 
-    public ContentMapperService(PostTagRepository postTagRepository) {
+    public ContentMapperService(PostTagRepository postTagRepository, PostRepository postRepository) {
         this.postTagRepository = postTagRepository;
+        this.postRepository = postRepository;
     }
 
     public Page<ContentDto.PostCard> toPostCards(Page<Post> page) {
@@ -39,12 +45,15 @@ public class ContentMapperService {
         }
 
         Map<Long, List<ContentDto.TagRef>> tagsByPostId = getTagsByPostIds(posts.stream().map(Post::getId).toList());
+        Map<Long, Long> publicSeriesPostCountBySeriesId = getPublicSeriesPostCountBySeriesId(posts);
         return posts.stream()
-                .map(post -> toPostCard(post, tagsByPostId.getOrDefault(post.getId(), List.of())))
+                .map(post -> toPostCard(post, tagsByPostId.getOrDefault(post.getId(), List.of()), publicSeriesPostCountBySeriesId))
                 .toList();
     }
 
-    public ContentDto.PostCard toPostCard(Post post, List<ContentDto.TagRef> tags) {
+    public ContentDto.PostCard toPostCard(Post post,
+                                          List<ContentDto.TagRef> tags,
+                                          Map<Long, Long> publicSeriesPostCountBySeriesId) {
         return new ContentDto.PostCard(
                 post.getId(),
                 post.getTitle(),
@@ -61,6 +70,7 @@ public class ContentMapperService {
                         post.getUser().getId(),
                         post.getUser().getUsername(),
                         post.getUser().getName()),
+                toSeriesRef(post, publicSeriesPostCountBySeriesId),
                 post.getPublishedAt(),
                 post.getReadTimeMinutes() == null ? 0 : post.getReadTimeMinutes(),
                 normalize(post.getViewCount()),
@@ -100,6 +110,37 @@ public class ContentMapperService {
         }
 
         return tagsByPostId;
+    }
+
+    private Map<Long, Long> getPublicSeriesPostCountBySeriesId(List<Post> posts) {
+        if (posts == null || posts.isEmpty()) {
+            return Map.of();
+        }
+
+        Set<Long> seriesIds = posts.stream()
+                .map(Post::getSeries)
+                .filter(Objects::nonNull)
+                .map(series -> series.getId())
+                .collect(Collectors.toSet());
+
+        if (seriesIds.isEmpty()) {
+            return Map.of();
+        }
+
+        return postRepository.findPublicSeriesPostCounts(seriesIds).stream()
+                .collect(Collectors.toMap(SeriesPostCountProjection::getSeriesId, SeriesPostCountProjection::getPostCount));
+    }
+
+    private ContentDto.SeriesRef toSeriesRef(Post post, Map<Long, Long> publicSeriesPostCountBySeriesId) {
+        if (post.getSeries() == null) {
+            return null;
+        }
+        return new ContentDto.SeriesRef(
+                post.getSeries().getId(),
+                post.getSeries().getTitle(),
+                post.getSeries().getSlug(),
+                post.getSeriesOrder(),
+                publicSeriesPostCountBySeriesId.getOrDefault(post.getSeries().getId(), 0L));
     }
 
     private long normalize(Long value) {

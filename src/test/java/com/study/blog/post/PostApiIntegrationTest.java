@@ -7,6 +7,8 @@ import com.study.blog.category.CategoryRepository;
 import com.study.blog.tag.PostTagRepository;
 import com.study.blog.tag.Tag;
 import com.study.blog.tag.TagRepository;
+import com.study.blog.series.PostSeries;
+import com.study.blog.series.PostSeriesRepository;
 import com.study.blog.user.User;
 import com.study.blog.user.UserProfile;
 import com.study.blog.user.UserProfileRepository;
@@ -62,15 +64,20 @@ class PostApiIntegrationTest {
     private PostTagRepository postTagRepository;
 
     @Autowired
+    private PostSeriesRepository postSeriesRepository;
+
+    @Autowired
     private EntityManager entityManager;
 
     private Category category;
     private Category anotherCategory;
     private Tag tag;
+    private User user;
+    private PostSeries series;
 
     @BeforeEach
     void setUp() {
-        User user = User.builder()
+        user = User.builder()
                 .username("writer")
                 .name("Writer")
                 .nickname("writerNick")
@@ -105,6 +112,12 @@ class PostApiIntegrationTest {
                 .deletedYn("N")
                 .build();
         tagRepository.save(tag);
+
+        series = postSeriesRepository.save(PostSeries.builder()
+                .owner(user)
+                .title("Existing Series")
+                .slug("existing-series")
+                .build());
     }
 
     @Test
@@ -275,6 +288,141 @@ class PostApiIntegrationTest {
         JsonNode updatedData = objectMapper.readTree(updateResponse).path("data");
         assertThat(updatedData.path("category").path("id").asLong()).isEqualTo(anotherCategory.getId());
         assertThat(updatedData.path("category").path("name").asText()).isEqualTo(anotherCategory.getName());
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void createAndUpdatePostShouldPersistExistingSeriesAndOrder() throws Exception {
+        String createBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Series Linked Post",
+                "subtitle", "Sub",
+                "categoryId", category.getId(),
+                "tagIds", List.of(tag.getId()),
+                "thumbnailUrl", "https://example.com/thumb.png",
+                "contentJson", sampleContentJson("body"),
+                "publishNow", true,
+                "seriesId", series.getId(),
+                "seriesOrder", 2
+        ));
+
+        String createResponse = mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode createdData = objectMapper.readTree(createResponse).path("data");
+        long postId = createdData.path("id").asLong();
+        assertThat(createdData.path("series").path("id").asLong()).isEqualTo(series.getId());
+        assertThat(createdData.path("series").path("title").asText()).isEqualTo(series.getTitle());
+        assertThat(createdData.path("series").path("order").asInt()).isEqualTo(1);
+
+        String updateBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Series Linked Post Updated",
+                "subtitle", "Sub Updated",
+                "categoryId", category.getId(),
+                "tagIds", List.of(tag.getId()),
+                "thumbnailUrl", "https://example.com/thumb2.png",
+                "contentJson", sampleContentJson("updated body"),
+                "publishNow", true,
+                "seriesId", series.getId(),
+                "seriesOrder", 1
+        ));
+
+        String updateResponse = mockMvc.perform(put("/api/posts/{postId}", postId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateBody))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode updatedData = objectMapper.readTree(updateResponse).path("data");
+        assertThat(updatedData.path("series").path("id").asLong()).isEqualTo(series.getId());
+        assertThat(updatedData.path("series").path("order").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void createPostShouldCreateSeriesWhenOnlySeriesTitleIsProvided() throws Exception {
+        String createBody = objectMapper.writeValueAsString(Map.of(
+                "title", "New Series Post",
+                "subtitle", "Sub",
+                "categoryId", category.getId(),
+                "tagIds", List.of(tag.getId()),
+                "thumbnailUrl", "https://example.com/thumb.png",
+                "contentJson", sampleContentJson("body"),
+                "publishNow", true,
+                "seriesTitle", "React Notes",
+                "seriesOrder", 1
+        ));
+
+        String createResponse = mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode createdData = objectMapper.readTree(createResponse).path("data");
+        assertThat(createdData.path("series").path("id").asLong()).isPositive();
+        assertThat(createdData.path("series").path("title").asText()).isEqualTo("React Notes");
+        assertThat(createdData.path("series").path("slug").asText()).isEqualTo("react-notes");
+        assertThat(createdData.path("series").path("order").asInt()).isEqualTo(1);
+        assertThat(postSeriesRepository.existsBySlug("react-notes")).isTrue();
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void draftShouldPersistSeriesFieldsAndExposeSeriesObject() throws Exception {
+        String draftBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Draft With Series",
+                "subtitle", "Sub",
+                "categoryId", category.getId(),
+                "thumbnailUrl", "https://example.com/thumb.png",
+                "contentJson", sampleContentJson("Draft body"),
+                "seriesId", series.getId(),
+                "seriesOrder", 3
+        ));
+
+        String draftCreateResponse = mockMvc.perform(post("/api/posts/drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(draftBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode createdDraftNode = objectMapper.readTree(draftCreateResponse).path("data");
+        long draftId = createdDraftNode.path("id").asLong();
+        assertThat(createdDraftNode.path("series").path("id").asLong()).isEqualTo(series.getId());
+        assertThat(createdDraftNode.path("series").path("order").asInt()).isEqualTo(3);
+
+        String draftUpdateBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Draft With New Series",
+                "subtitle", "Sub Updated",
+                "categoryId", category.getId(),
+                "thumbnailUrl", "https://example.com/thumb2.png",
+                "contentJson", sampleContentJson("Updated draft body"),
+                "seriesTitle", "Draft Series",
+                "seriesOrder", 1
+        ));
+
+        String updatedDraftResponse = mockMvc.perform(put("/api/posts/drafts/{draftId}", draftId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(draftUpdateBody))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode updatedDraftNode = objectMapper.readTree(updatedDraftResponse).path("data");
+        assertThat(updatedDraftNode.path("series").path("title").asText()).isEqualTo("Draft Series");
+        assertThat(updatedDraftNode.path("series").path("slug").asText()).isEqualTo("draft-series");
+        assertThat(updatedDraftNode.path("series").path("order").asInt()).isEqualTo(1);
     }
 
     @Test
@@ -464,6 +612,144 @@ class PostApiIntegrationTest {
         assertThat(first.path("imageUrls").get(0).asText()).isEqualTo("https://example.com/image-1.png");
     }
 
+    @Test
+    @WithMockUser(username = "writer")
+    void customBlocksShouldRoundTripForDraftAndPublishedPost() throws Exception {
+        Map<String, Object> customContentJson = sampleCustomBlockContentJson();
+
+        String draftBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Custom Draft",
+                "subtitle", "draft",
+                "categoryId", category.getId(),
+                "thumbnailUrl", "https://example.com/custom-draft.png",
+                "contentJson", customContentJson
+        ));
+
+        String draftResponse = mockMvc.perform(post("/api/posts/drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(draftBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long draftId = objectMapper.readTree(draftResponse).path("data").path("id").asLong();
+
+        JsonNode storedDraft = objectMapper.readTree(mockMvc.perform(get("/api/posts/drafts/{draftId}", draftId))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .path("data");
+
+        assertThat(storedDraft.path("contentJson").path("content").get(0).path("type").asText()).isEqualTo("callout");
+        assertThat(storedDraft.path("contentJson").path("content").get(1).path("type").asText()).isEqualTo("simpleTable");
+        assertThat(storedDraft.path("contentJson").path("content").get(2).path("type").asText()).isEqualTo("linkCard");
+        assertThat(storedDraft.path("contentJson").path("content").get(3).path("type").asText()).isEqualTo("editorialImage");
+        assertThat(storedDraft.path("contentJson").path("content").get(4).path("type").asText()).isEqualTo("twoColumnImages");
+
+        String publishBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Custom Post",
+                "subtitle", "publish",
+                "categoryId", category.getId(),
+                "tagIds", List.of(tag.getId()),
+                "thumbnailUrl", "https://example.com/custom-post.png",
+                "contentJson", customContentJson,
+                "publishNow", true
+        ));
+
+        String publishResponse = mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(publishBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long postId = objectMapper.readTree(publishResponse).path("data").path("id").asLong();
+
+        JsonNode detail = objectMapper.readTree(mockMvc.perform(get("/api/posts/{postId}", postId))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .path("data");
+
+        assertThat(detail.path("contentJson").path("content").get(0).path("attrs").path("tone").asText()).isEqualTo("tip");
+        assertThat(detail.path("contentJson").path("content").get(1).path("attrs").path("rows").get(0).get(0).asText()).isEqualTo("제목");
+        assertThat(detail.path("contentJson").path("content").get(2).path("attrs").path("url").asText()).isEqualTo("https://example.com");
+        assertThat(detail.path("contentJson").path("content").get(3).path("attrs").path("src").asText()).isEqualTo("https://example.com/editorial.png");
+        assertThat(detail.path("contentJson").path("content").get(4).path("attrs").path("leftSrc").asText()).isEqualTo("https://example.com/left.png");
+        assertThat(detail.path("contentHtml").asText()).contains("data-type=\"callout\"");
+        assertThat(detail.path("contentHtml").asText()).contains("data-type=\"simpleTable\"");
+        assertThat(detail.path("contentHtml").asText()).contains("data-type=\"linkCard\"");
+        assertThat(detail.path("contentHtml").asText()).contains("data-type=\"editorialImage\"");
+        assertThat(detail.path("contentHtml").asText()).contains("data-type=\"twoColumnImages\"");
+        assertThat(detail.path("contentHtml").asText()).contains("data-two-column-side=\"left\"");
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void postsApiShouldPersistAndExposeSeriesSummary() throws Exception {
+        String seriesResponse = mockMvc.perform(post("/api/v1/series")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "title", "Frontend Redesign Log",
+                                "slug", "frontend-redesign-log",
+                                "description", "series desc"
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long seriesId = objectMapper.readTree(seriesResponse).path("data").path("id").asLong();
+
+        String createBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Series Linked Post",
+                "subtitle", "series",
+                "categoryId", category.getId(),
+                "tagIds", List.of(tag.getId()),
+                "thumbnailUrl", "https://example.com/series-linked.png",
+                "contentJson", sampleContentJson("body"),
+                "publishNow", true,
+                "seriesId", seriesId,
+                "seriesOrder", 1
+        ));
+
+        String createResponse = mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode createdData = objectMapper.readTree(createResponse).path("data");
+        long postId = createdData.path("id").asLong();
+        assertThat(createdData.path("series").path("id").asLong()).isEqualTo(seriesId);
+        assertThat(createdData.path("series").path("order").asInt()).isEqualTo(1);
+
+        JsonNode detailData = objectMapper.readTree(mockMvc.perform(get("/api/posts/{postId}", postId))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .path("data");
+        assertThat(detailData.path("series").path("slug").asText()).isEqualTo("frontend-redesign-log");
+
+        JsonNode listItem = objectMapper.readTree(mockMvc.perform(get("/api/posts?q=Series Linked Post&page=0&size=10"))
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString())
+                .path("data")
+                .path("content")
+                .get(0);
+        assertThat(listItem.path("series").path("id").asLong()).isEqualTo(seriesId);
+        assertThat(listItem.path("series").path("postCount").asInt()).isEqualTo(1);
+    }
+
     private Map<String, Object> sampleContentJson(String text) {
         return Map.of(
                 "type", "doc",
@@ -493,6 +779,49 @@ class PostApiIntegrationTest {
                                 "type", "image",
                                 "attrs", Map.of("src", secondImage, "alt", "second"))
                 )
+        );
+    }
+
+    private Map<String, Object> sampleCustomBlockContentJson() {
+        return Map.of(
+                "type", "doc",
+                "content", List.of(
+                        Map.of(
+                                "type", "callout",
+                                "attrs", Map.of("tone", "tip"),
+                                "content", List.of(
+                                        Map.of(
+                                                "type", "paragraph",
+                                                "content", List.of(Map.of("type", "text", "text", "팁 내용"))))),
+                        Map.of(
+                                "type", "simpleTable",
+                                "attrs", Map.of(
+                                        "hasHeaderRow", true,
+                                        "rows", List.of(
+                                                List.of("제목", "항목", "설명"),
+                                                List.of("A", "B", "C")))),
+                        Map.of(
+                                "type", "linkCard",
+                                "attrs", Map.of(
+                                        "url", "https://example.com",
+                                        "title", "example",
+                                        "description", "설명",
+                                        "domain", "example.com")),
+                        Map.of(
+                                "type", "editorialImage",
+                                "attrs", Map.of(
+                                        "src", "https://example.com/editorial.png",
+                                        "alt", "이미지",
+                                        "caption", "캡션")),
+                        Map.of(
+                                "type", "twoColumnImages",
+                                "attrs", Map.of(
+                                        "leftSrc", "https://example.com/left.png",
+                                        "rightSrc", "https://example.com/right.png",
+                                        "leftAlt", "왼쪽",
+                                        "rightAlt", "오른쪽",
+                                        "leftCaption", "캡션1",
+                                        "rightCaption", "캡션2")))
         );
     }
 

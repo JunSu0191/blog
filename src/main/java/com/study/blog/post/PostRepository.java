@@ -52,6 +52,17 @@ public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificat
     @EntityGraph(attributePaths = { "user", "category", "series" })
     Optional<Post> findWithAssociationsById(Long id);
 
+    @EntityGraph(attributePaths = { "user", "category", "series" })
+    @Query("""
+            select p
+            from Post p
+            where p.series.id = :seriesId
+              and p.deletedYn = 'N'
+              and p.deletedAt is null
+            order by coalesce(p.seriesOrder, 2147483647) asc, p.id asc
+            """)
+    List<Post> findActiveBySeriesIdOrderBySeriesOrderAscIdAsc(@Param("seriesId") Long seriesId);
+
     @Query("""
             select p
             from Post p
@@ -312,6 +323,19 @@ public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificat
             """)
     List<Post> findPublicPostsBySeriesId(@Param("seriesId") Long seriesId);
 
+    @EntityGraph(attributePaths = { "user", "category", "series" })
+    @Query("""
+            select p
+            from Post p
+            where p.deletedYn = 'N'
+              and p.deletedAt is null
+              and p.status = com.study.blog.post.PostStatus.PUBLISHED
+              and p.visibility = com.study.blog.post.PostVisibility.PUBLIC
+              and p.publishedAt is not null
+              and p.series.id = :seriesId
+            """)
+    Page<Post> findPublicPostsPageBySeriesId(@Param("seriesId") Long seriesId, Pageable pageable);
+
     @Query("""
             select count(p.id)
             from Post p
@@ -330,4 +354,17 @@ public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificat
             where p.series.id = :seriesId
             """)
     Integer findMaxSeriesOrder(@Param("seriesId") Long seriesId);
+
+    @Query("""
+            select p.series.id as seriesId, count(p.id) as postCount
+            from Post p
+            where p.series.id in :seriesIds
+              and p.deletedYn = 'N'
+              and p.deletedAt is null
+              and p.status = com.study.blog.post.PostStatus.PUBLISHED
+              and p.visibility = com.study.blog.post.PostVisibility.PUBLIC
+              and p.publishedAt is not null
+            group by p.series.id
+            """)
+    List<SeriesPostCountProjection> findPublicSeriesPostCounts(@Param("seriesIds") Collection<Long> seriesIds);
 }

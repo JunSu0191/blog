@@ -12,7 +12,9 @@ import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,21 +28,26 @@ import java.util.Locale;
 @Transactional
 public class SeriesService {
 
+    private static final String SERIES_NOT_FOUND_CODE = "series_not_found";
+
     private final PostSeriesRepository postSeriesRepository;
     private final PostRepository postRepository;
     private final UserRepository userRepository;
     private final ContentMapperService contentMapperService;
+    private final SeriesMembershipService seriesMembershipService;
     private final ScheduledPostPublicationService scheduledPostPublicationService;
 
     public SeriesService(PostSeriesRepository postSeriesRepository,
                          PostRepository postRepository,
                          UserRepository userRepository,
                          ContentMapperService contentMapperService,
+                         SeriesMembershipService seriesMembershipService,
                          ScheduledPostPublicationService scheduledPostPublicationService) {
         this.postSeriesRepository = postSeriesRepository;
         this.postRepository = postRepository;
         this.userRepository = userRepository;
         this.contentMapperService = contentMapperService;
+        this.seriesMembershipService = seriesMembershipService;
         this.scheduledPostPublicationService = scheduledPostPublicationService;
     }
 
@@ -64,11 +71,29 @@ public class SeriesService {
                 series.getTitle(),
                 series.getSlug(),
                 series.getDescription(),
+                series.getCoverImageUrl(),
+                series.getOwner().getId(),
                 (long) postCards.size(),
                 toAuthor(series.getOwner()),
                 postCards,
                 series.getCreatedAt(),
                 series.getUpdatedAt());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ContentDto.PostCard> listSeriesPosts(Long seriesId, Pageable pageable) {
+        publishDueScheduledPosts();
+        getSeriesOrThrow(seriesId);
+        Pageable normalized = pageable.getSort().isSorted()
+                ? pageable
+                : PageRequest.of(
+                        pageable.getPageNumber(),
+                        pageable.getPageSize(),
+                        Sort.by(
+                                Sort.Order.asc("seriesOrder"),
+                                Sort.Order.asc("publishedAt"),
+                                Sort.Order.asc("id")));
+        return contentMapperService.toPostCards(postRepository.findPublicPostsPageBySeriesId(seriesId, normalized));
     }
 
     public SeriesDto.DetailResponse createSeries(Long ownerUserId, SeriesDto.UpsertRequest request) {
@@ -80,6 +105,7 @@ public class SeriesService {
                 .title(request.title().trim())
                 .slug(slug)
                 .description(normalizeNullable(request.description()))
+                .coverImageUrl(normalizeNullable(request.coverImageUrl()))
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
@@ -97,36 +123,38 @@ public class SeriesService {
         series.setTitle(request.title().trim());
         series.setSlug(generateUniqueSlug(request.slug(), request.title(), seriesId));
         series.setDescription(normalizeNullable(request.description()));
+        series.setCoverImageUrl(normalizeNullable(request.coverImageUrl()));
         series.setUpdatedAt(LocalDateTime.now());
         postSeriesRepository.save(series);
         return getSeries(seriesId);
     }
 
     public SeriesDto.AssignmentResponse assignPost(Long actorUserId, Long postId, SeriesDto.AssignPostRequest request) {
-        Post post = postRepository.findWithAssociationsById(postId)
-                .orElseThrow(() -> new CodedApiException(
-                        PostErrorCode.POST_NOT_FOUND.code(),
-                        HttpStatus.NOT_FOUND,
-                        "게시글을 찾을 수 없습니다."));
-        if (!post.getUser().getId().equals(actorUserId)) {
-            throw new CodedApiException(
-                    PostErrorCode.UNAUTHORIZED_POST_ACCESS.code(),
-                    HttpStatus.FORBIDDEN,
-                    "작성자만 시리즈를 변경할 수 있습니다.");
+        SeriesMembershipService.MembershipAssignment assignment =
+                seriesMembershipService.assignPostToSeries(actorUserId, request.seriesId(), postId, request.order());
+        return toAssignmentResponse(assignment);
+    }
+
+    public PostSeries resolveOwnedSeries(Long ownerUserId, Long seriesId, String seriesTitle) {
+        if (seriesId != null) {
+            return postSeriesRepository.findByIdAndOwner_Id(seriesId, ownerUserId)
+                    .orElseThrow(this::seriesNotFound);
         }
 
-        PostSeries series = postSeriesRepository.findByIdAndOwner_Id(request.seriesId(), actorUserId)
-                .orElseThrow(() -> new IllegalArgumentException("시리즈를 찾을 수 없습니다."));
-        Integer order = request.order();
-        if (order == null || order <= 0) {
-            Integer maxOrder = postRepository.findMaxSeriesOrder(series.getId());
-            order = (maxOrder == null ? 0 : maxOrder) + 1;
+        String normalizedSeriesTitle = normalizeNullable(seriesTitle);
+        if (normalizedSeriesTitle == null) {
+            return null;
         }
 
-        post.setSeries(series);
-        post.setSeriesOrder(order);
-        postRepository.save(post);
-        return new SeriesDto.AssignmentResponse(post.getId(), series.getId(), order);
+        User owner = getUserOrThrow(ownerUserId);
+        PostSeries series = PostSeries.builder()
+                .owner(owner)
+                .title(normalizedSeriesTitle)
+                .slug(generateUniqueSlug(null, normalizedSeriesTitle, null))
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+        return postSeriesRepository.save(series);
     }
 
     private void publishDueScheduledPosts() {
@@ -135,7 +163,7 @@ public class SeriesService {
 
     private PostSeries getSeriesOrThrow(Long seriesId) {
         return postSeriesRepository.findById(seriesId)
-                .orElseThrow(() -> new IllegalArgumentException("시리즈를 찾을 수 없습니다."));
+                .orElseThrow(this::seriesNotFound);
     }
 
     private User getUserOrThrow(Long userId) {
@@ -151,8 +179,11 @@ public class SeriesService {
                 series.getTitle(),
                 series.getSlug(),
                 series.getDescription(),
+                series.getCoverImageUrl(),
+                series.getOwner().getId(),
                 projection.getPostCount(),
                 toAuthor(series.getOwner()),
+                series.getCreatedAt(),
                 series.getUpdatedAt());
     }
 
@@ -206,5 +237,40 @@ public class SeriesService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    public SeriesDto.AssignmentResponse addPost(Long actorUserId, Long seriesId, SeriesDto.AddPostRequest request) {
+        SeriesMembershipService.MembershipAssignment assignment =
+                seriesMembershipService.assignPostToSeries(actorUserId, seriesId, request.postId(), request.order());
+        return toAssignmentResponse(assignment);
+    }
+
+    public SeriesDto.AssignmentResponse updatePostOrder(Long actorUserId,
+                                                        Long seriesId,
+                                                        Long postId,
+                                                        SeriesDto.UpdateSeriesPostRequest request) {
+        SeriesMembershipService.MembershipAssignment assignment =
+                seriesMembershipService.updatePostOrder(actorUserId, seriesId, postId, request.order());
+        return toAssignmentResponse(assignment);
+    }
+
+    public void removePost(Long actorUserId, Long seriesId, Long postId) {
+        seriesMembershipService.removePostFromSeries(actorUserId, seriesId, postId);
+    }
+
+    private SeriesDto.AssignmentResponse toAssignmentResponse(SeriesMembershipService.MembershipAssignment assignment) {
+        return new SeriesDto.AssignmentResponse(
+                assignment.postId(),
+                assignment.seriesId(),
+                assignment.order(),
+                assignment.createdAt(),
+                assignment.updatedAt());
+    }
+
+    private CodedApiException seriesNotFound() {
+        return new CodedApiException(
+                SERIES_NOT_FOUND_CODE,
+                HttpStatus.NOT_FOUND,
+                "시리즈를 찾을 수 없습니다.");
     }
 }

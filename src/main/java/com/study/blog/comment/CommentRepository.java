@@ -19,6 +19,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
 
     // 특정 부모 댓글의 대댓글 조회
     List<Comment> findByParent_IdAndDeletedYnOrderByCreatedAtDesc(Long parentId, String deletedYn);
+    List<Comment> findByParent_IdAndDeletedYnOrderByCreatedAtAsc(Long parentId, String deletedYn);
 
     // 특정 게시글의 모든 댓글 조회 (페이지네이션)
     Page<Comment> findByPost_IdAndDeletedYn(Long postId, String deletedYn, Pageable pageable);
@@ -34,6 +35,7 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
     // 특정 게시글의 댓글 수 조회
     @Query("SELECT COUNT(c) FROM Comment c WHERE c.post.id = :postId AND c.deletedYn = :deletedYn")
     Long countByPostIdAndDeletedYn(@Param("postId") Long postId, @Param("deletedYn") String deletedYn);
+    Long countByParent_IdAndDeletedYn(Long parentId, String deletedYn);
 
     Long countByUser_IdAndDeletedYn(Long userId, String deletedYn);
 

@@ -20,7 +20,8 @@ public final class PostManagementDto {
             Long id,
             String title,
             String slug,
-            Integer order
+            Integer order,
+            Long postCount
     ) {
     }
 
@@ -40,6 +41,7 @@ public final class PostManagementDto {
             LocalDateTime publishedAt,
             LocalDateTime scheduledAt,
             Long seriesId,
+            @Size(max = 200) String seriesTitle,
             Integer seriesOrder
     ) {
     }

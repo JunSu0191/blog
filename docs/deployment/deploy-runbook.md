@@ -65,6 +65,18 @@ curl -I https://blog-pause.com/swagger-ui/index.html
 - OAuth 로그인 진입
 - WebSocket 연결이 필요한 기능
 
+OAuth 프록시 확인 예시:
+
+```bash
+curl -I https://blog-pause.com/oauth2/authorization/kakao
+curl -I https://blog-pause.com/login/oauth2/code/kakao
+```
+
+정상 기대값:
+
+- `/oauth2/authorization/kakao` 요청 시 `302` 응답과 `Location: https://kauth.kakao.com/...`
+- `/login/oauth2/code/kakao` 는 직접 열면 보통 `4xx` 또는 앱 정의 에러가 나더라도, Nginx가 `index.html`을 반환하면 안 됨
+
 ## 5. 배포 후 설정 변경이 필요한 경우
 
 운영 환경변수 변경 시:

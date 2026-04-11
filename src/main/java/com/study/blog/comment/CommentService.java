@@ -14,6 +14,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -41,13 +42,27 @@ public class CommentService {
     }
 
     /**
-     * 특정 게시글의 댓글 목록 조회 (계층 구조 포함)
+     * 특정 게시글의 루트 댓글 목록 조회
      */
     public List<CommentDto.Response> getCommentsByPostId(Long postId) {
         List<Comment> comments = commentRepository.findByPost_IdAndParentIsNullAndDeletedYnOrderByCreatedAtDesc(postId, "N");
         return comments.stream()
                 .filter(comment -> comment.getDeletedAt() == null)
-                .map(this::toResponseWithReplies)
+                .map(this::toResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * 특정 부모 댓글의 답글 목록 조회
+     */
+    public List<CommentDto.Response> getRepliesByCommentId(Long commentId) {
+        Comment parent = commentRepository.findByIdAndDeletedYn(commentId, "N")
+                .orElseThrow(() -> new IllegalArgumentException("댓글을 찾을 수 없습니다: " + commentId));
+
+        return commentRepository.findByParent_IdAndDeletedYnOrderByCreatedAtAsc(parent.getId(), "N").stream()
+                .filter(reply -> reply.getDeletedAt() == null)
+                .sorted(Comparator.comparing(Comment::getCreatedAt))
+                .map(this::toResponse)
                 .collect(Collectors.toList());
     }
 
@@ -167,22 +182,6 @@ public class CommentService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 댓글을 Response DTO로 변환 (대댓글 포함)
-     */
-    private CommentDto.Response toResponseWithReplies(Comment comment) {
-        CommentDto.Response response = toResponse(comment);
-        List<Comment> replies = commentRepository.findByParent_IdAndDeletedYnOrderByCreatedAtDesc(comment.getId(), "N");
-        response.replies = replies.stream()
-                .filter(reply -> reply.getDeletedAt() == null)
-                .map(this::toResponse)
-                .collect(Collectors.toList());
-        return response;
-    }
-
-    /**
-     * 댓글을 Response DTO로 변환
-     */
     private CommentDto.Response toResponse(Comment comment) {
         CommentDto.Response response = new CommentDto.Response();
         response.id = comment.getId();
@@ -197,6 +196,7 @@ public class CommentService {
         response.likeCount = comment.getLikeCount();
         response.dislikeCount = comment.getDislikeCount();
         response.myReaction = null;
+        response.replyCount = commentRepository.countByParent_IdAndDeletedYn(comment.getId(), "N");
         response.createdAt = comment.getCreatedAt();
         response.updatedAt = comment.getUpdatedAt();
         return response;
