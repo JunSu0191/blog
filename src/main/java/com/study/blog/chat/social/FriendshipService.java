@@ -2,6 +2,7 @@ package com.study.blog.chat.social;
 
 import com.study.blog.chat.dto.ChatContractDto;
 import com.study.blog.core.exception.CodedApiException;
+import com.study.blog.notification.NotificationService;
 import com.study.blog.realtime.RealtimeEventPublisher;
 import com.study.blog.realtime.UserEventType;
 import com.study.blog.user.User;
@@ -24,15 +25,18 @@ public class FriendshipService {
     private final FriendshipRequestRepository friendshipRequestRepository;
     private final UserRepository userRepository;
     private final RealtimeEventPublisher realtimeEventPublisher;
+    private final NotificationService notificationService;
 
     public FriendshipService(FriendshipRepository friendshipRepository,
                              FriendshipRequestRepository friendshipRequestRepository,
                              UserRepository userRepository,
-                             RealtimeEventPublisher realtimeEventPublisher) {
+                             RealtimeEventPublisher realtimeEventPublisher,
+                             NotificationService notificationService) {
         this.friendshipRepository = friendshipRepository;
         this.friendshipRequestRepository = friendshipRequestRepository;
         this.userRepository = userRepository;
         this.realtimeEventPublisher = realtimeEventPublisher;
+        this.notificationService = notificationService;
     }
 
     @Transactional(readOnly = true)
@@ -115,6 +119,13 @@ public class FriendshipService {
         ChatContractDto.FriendRequestResponse response = toFriendRequestResponse(created);
         publishUserEvent(target, UserEventType.FRIEND_REQUEST_CREATED, Map.of("request", response));
         publishUserEvent(requester, UserEventType.FRIEND_REQUEST_UPDATED, Map.of("request", response));
+        notificationService.createFriendRequestReceivedNotification(
+                target.getId(),
+                created.getId(),
+                requester.getId(),
+                requester.getName(),
+                requester.getNickname(),
+                requester.getUsername());
         return response;
     }
 
@@ -141,6 +152,14 @@ public class FriendshipService {
         ChatContractDto.FriendRequestResponse response = toFriendRequestResponse(request);
         publishUserEvent(request.getRequester(), UserEventType.FRIEND_REQUEST_UPDATED, Map.of("request", response));
         publishUserEvent(request.getTarget(), UserEventType.FRIEND_REQUEST_UPDATED, Map.of("request", response));
+        notificationService.createFriendRequestAcceptedNotification(
+                request.getRequester().getId(),
+                request.getId(),
+                request.getRequester().getId(),
+                request.getTarget().getId(),
+                request.getTarget().getName(),
+                request.getTarget().getNickname(),
+                request.getTarget().getUsername());
         return response;
     }
 
@@ -162,6 +181,14 @@ public class FriendshipService {
         ChatContractDto.FriendRequestResponse response = toFriendRequestResponse(request);
         publishUserEvent(request.getRequester(), UserEventType.FRIEND_REQUEST_UPDATED, Map.of("request", response));
         publishUserEvent(request.getTarget(), UserEventType.FRIEND_REQUEST_UPDATED, Map.of("request", response));
+        notificationService.createFriendRequestRejectedNotification(
+                request.getRequester().getId(),
+                request.getId(),
+                request.getRequester().getId(),
+                request.getTarget().getId(),
+                request.getTarget().getName(),
+                request.getTarget().getNickname(),
+                request.getTarget().getUsername());
         return response;
     }
 
@@ -183,6 +210,13 @@ public class FriendshipService {
         ChatContractDto.FriendRequestResponse updated = toFriendRequestResponse(request);
         publishUserEvent(request.getRequester(), UserEventType.FRIEND_REQUEST_UPDATED, Map.of("request", updated));
         publishUserEvent(request.getTarget(), UserEventType.FRIEND_REQUEST_UPDATED, Map.of("request", updated));
+        notificationService.createFriendRequestCanceledNotification(
+                request.getTarget().getId(),
+                request.getId(),
+                request.getRequester().getId(),
+                request.getRequester().getName(),
+                request.getRequester().getNickname(),
+                request.getRequester().getUsername());
 
         ChatContractDto.FriendRequestCancelResponse response = new ChatContractDto.FriendRequestCancelResponse();
         response.setRequestId(request.getId());

@@ -3,6 +3,7 @@ package com.study.blog.chat;
 import com.study.blog.chat.dto.ChatContractDto;
 import com.study.blog.chat.social.*;
 import com.study.blog.core.exception.CodedApiException;
+import com.study.blog.notification.NotificationService;
 import com.study.blog.realtime.RealtimeEventPublisher;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
@@ -32,6 +33,8 @@ class FriendshipServiceTest {
     private UserRepository userRepository;
     @Mock
     private RealtimeEventPublisher realtimeEventPublisher;
+    @Mock
+    private NotificationService notificationService;
 
     private FriendshipService friendshipService;
 
@@ -41,7 +44,8 @@ class FriendshipServiceTest {
                 friendshipRepository,
                 friendshipRequestRepository,
                 userRepository,
-                realtimeEventPublisher);
+                realtimeEventPublisher,
+                notificationService);
     }
 
     @Test
@@ -73,6 +77,7 @@ class FriendshipServiceTest {
         assertThat(response.getId()).isEqualTo(100L);
         assertThat(response.getStatus()).isEqualTo(FriendshipRequestStatus.PENDING);
         verify(realtimeEventPublisher).publishUserEvent(eq("u2"), eq(2L), eq("friend.request.created"), any());
+        verify(notificationService).createFriendRequestReceivedNotification(2L, 100L, 1L, "U1", null, "u1");
     }
 
     @Test
@@ -99,6 +104,7 @@ class FriendshipServiceTest {
         verify(friendshipRequestRepository).deleteByRequesterTargetStatusExcludingId(
                 1L, 2L, FriendshipRequestStatus.ACCEPTED, 200L);
         verify(realtimeEventPublisher, atLeastOnce()).publishUserEvent(any(), any(), eq("friend.request.updated"), any());
+        verify(notificationService).createFriendRequestAcceptedNotification(1L, 200L, 1L, 2L, "U2", null, "u2");
     }
 
     @Test
@@ -119,6 +125,7 @@ class FriendshipServiceTest {
         assertThat(response.getStatus()).isEqualTo(FriendshipRequestStatus.REJECTED);
         verify(friendshipRequestRepository).deleteByRequesterTargetStatusExcludingId(
                 1L, 2L, FriendshipRequestStatus.REJECTED, 301L);
+        verify(notificationService).createFriendRequestRejectedNotification(1L, 301L, 1L, 2L, "U2", null, "u2");
     }
 
     @Test
@@ -176,6 +183,7 @@ class FriendshipServiceTest {
         verify(friendshipRequestRepository).deleteByRequesterTargetStatusExcludingId(
                 1L, 2L, FriendshipRequestStatus.CANCELED, 400L);
         verify(realtimeEventPublisher, atLeastOnce()).publishUserEvent(any(), any(), eq("friend.request.updated"), any());
+        verify(notificationService).createFriendRequestCanceledNotification(2L, 400L, 1L, "U1", null, "u1");
     }
 
     @Test
