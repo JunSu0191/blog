@@ -134,3 +134,10 @@ app:
     ip-rate-limit-per-minute: ${APP_VERIFICATION_IP_RATE_LIMIT_PER_MINUTE:30}
     hash-secret: ${APP_VERIFICATION_HASH_SECRET:change-this-verification-hash-secret}
     mock-expose-code: ${APP_VERIFICATION_MOCK_EXPOSE_CODE:false}
+  push:
+    vapid:
+      public-key: ${APP_PUSH_VAPID_PUBLIC_KEY:}
+      private-key: ${APP_PUSH_VAPID_PRIVATE_KEY:}
+      subject: ${APP_PUSH_VAPID_SUBJECT:mailto:admin@example.com}
+    default-icon-url: ${APP_PUSH_DEFAULT_ICON_URL:}
+    default-badge-url: ${APP_PUSH_DEFAULT_BADGE_URL:}

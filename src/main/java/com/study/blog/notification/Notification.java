@@ -38,6 +38,9 @@ public class Notification {
     @Column(length = 1000)
     private String body;
 
+    @Column(name = "link_url", length = 500)
+    private String linkUrl;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "json")
     private Map<String, Object> payload;

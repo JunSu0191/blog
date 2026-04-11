@@ -99,15 +99,15 @@ public class NotificationService {
             payload.put("conversationId", conversationId);
             payload.put("messageId", messageId);
             payload.put("senderId", senderId);
+            payload.put("senderName", senderName);
 
-            Notification notification = Notification.builder()
-                    .user(user)
-                    .type("CHAT_MESSAGE")
-                    .title("새 채팅 메시지")
-                    .body(buildChatBody(senderName, messageBody))
-                    .payload(payload)
-                    .build();
-            toSave.add(notification);
+            toSave.add(buildNotification(
+                    user,
+                    NotificationType.CHAT_MESSAGE,
+                    "새 채팅 메시지",
+                    buildChatBody(senderName, messageBody),
+                    "/chat?conversationId=" + conversationId,
+                    payload));
         }
 
         List<Notification> saved = notificationRepository.saveAll(toSave);
@@ -137,14 +137,134 @@ public class NotificationService {
             if (parentCommentId != null) {
                 payload.put("parentCommentId", parentCommentId);
             }
+            payload.put("commenterName", commenterName);
 
-            Notification saved = notificationRepository.saveAndFlush(Notification.builder()
-                    .user(postOwner)
-                    .type("POST_COMMENT")
-                    .title("내 게시글에 새 댓글")
-                    .body(buildPostCommentBody(commenterName, postTitle, commentContent))
-                    .payload(payload)
-                    .build());
+            Notification saved = notificationRepository.saveAndFlush(buildNotification(
+                    postOwner,
+                    NotificationType.POST_COMMENT,
+                    "내 게시글에 새 댓글",
+                    buildPostCommentBody(commenterName, postTitle, commentContent),
+                    "/posts/" + postId,
+                    payload));
+            runAfterCommitOrNow(() -> dispatchNotification(saved));
+        });
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createFriendRequestReceivedNotification(Long targetUserId,
+                                                        Long requestId,
+                                                        Long requesterId,
+                                                        String requesterName,
+                                                        String requesterNickname,
+                                                        String requesterUsername) {
+        createFriendRequestNotification(
+                targetUserId,
+                NotificationType.FRIEND_REQUEST_RECEIVED,
+                "친구 요청",
+                buildFriendRequestBody(requesterName, requesterNickname, "친구 요청을 보냈습니다."),
+                requestId,
+                requesterId,
+                targetUserId,
+                requesterName,
+                requesterNickname,
+                requesterUsername);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createFriendRequestAcceptedNotification(Long requesterUserId,
+                                                        Long requestId,
+                                                        Long requesterId,
+                                                        Long targetUserId,
+                                                        String targetName,
+                                                        String targetNickname,
+                                                        String targetUsername) {
+        createFriendRequestNotification(
+                requesterUserId,
+                NotificationType.FRIEND_REQUEST_ACCEPTED,
+                "친구 요청 수락",
+                buildFriendRequestBody(targetName, targetNickname, "친구 요청을 수락했습니다."),
+                requestId,
+                requesterId,
+                targetUserId,
+                targetName,
+                targetNickname,
+                targetUsername);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createFriendRequestRejectedNotification(Long requesterUserId,
+                                                        Long requestId,
+                                                        Long requesterId,
+                                                        Long targetUserId,
+                                                        String targetName,
+                                                        String targetNickname,
+                                                        String targetUsername) {
+        createFriendRequestNotification(
+                requesterUserId,
+                NotificationType.FRIEND_REQUEST_REJECTED,
+                "친구 요청 거절",
+                buildFriendRequestBody(targetName, targetNickname, "친구 요청을 거절했습니다."),
+                requestId,
+                requesterId,
+                targetUserId,
+                targetName,
+                targetNickname,
+                targetUsername);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void createFriendRequestCanceledNotification(Long targetUserId,
+                                                        Long requestId,
+                                                        Long requesterId,
+                                                        String requesterName,
+                                                        String requesterNickname,
+                                                        String requesterUsername) {
+        createFriendRequestNotification(
+                targetUserId,
+                NotificationType.FRIEND_REQUEST_CANCELED,
+                "친구 요청 취소",
+                buildFriendRequestBody(requesterName, requesterNickname, "보낸 친구 요청을 취소했습니다."),
+                requestId,
+                requesterId,
+                targetUserId,
+                requesterName,
+                requesterNickname,
+                requesterUsername);
+    }
+
+    private void createFriendRequestNotification(Long recipientUserId,
+                                                 NotificationType type,
+                                                 String title,
+                                                 String body,
+                                                 Long requestId,
+                                                 Long requesterId,
+                                                 Long targetUserId,
+                                                 String actorName,
+                                                 String actorNickname,
+                                                 String actorUsername) {
+        userRepository.findById(recipientUserId).ifPresent(recipient -> {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("requestId", requestId);
+            payload.put("requesterId", requesterId);
+            payload.put("targetUserId", targetUserId);
+            payload.put("status", type.name().replace("FRIEND_REQUEST_", ""));
+            if (actorNickname != null && !actorNickname.isBlank()) {
+                payload.put("requesterNickname", actorNickname);
+            }
+            if (actorName != null && !actorName.isBlank()) {
+                payload.put("requesterName", actorName);
+            }
+            if (actorUsername != null && !actorUsername.isBlank()) {
+                payload.put("requesterUsername", actorUsername);
+            }
+
+            Notification saved = notificationRepository.saveAndFlush(buildNotification(
+                    recipient,
+                    type,
+                    title,
+                    body,
+                    "/chat",
+                    payload));
             runAfterCommitOrNow(() -> dispatchNotification(saved));
         });
     }
@@ -169,6 +289,13 @@ public class NotificationService {
                 ? "댓글이 도착했습니다."
                 : abbreviate(commentContent.replace("\n", " ").trim(), 80);
         return actor + "님이 " + safePostTitle + "에 댓글을 남겼습니다: " + commentPreview;
+    }
+
+    private String buildFriendRequestBody(String actorName, String actorNickname, String action) {
+        String actor = (actorNickname != null && !actorNickname.isBlank())
+                ? actorNickname
+                : ((actorName != null && !actorName.isBlank()) ? actorName : "누군가");
+        return actor + "님이 " + action;
     }
 
     private String abbreviate(String text, int maxLen) {
@@ -205,11 +332,29 @@ public class NotificationService {
         r.setType(n.getType());
         r.setTitle(n.getTitle());
         r.setBody(n.getBody());
+        r.setLinkUrl(n.getLinkUrl());
         r.setPayload(n.getPayload());
         r.setCreatedAt(n.getCreatedAt());
         r.setReadAt(n.getReadAt());
+        r.setRead(n.getReadAt() != null);
         r.setArchivedAt(n.getArchivedAt());
         return r;
+    }
+
+    private Notification buildNotification(User user,
+                                           NotificationType type,
+                                           String title,
+                                           String body,
+                                           String linkUrl,
+                                           Map<String, Object> payload) {
+        return Notification.builder()
+                .user(user)
+                .type(type.name())
+                .title(title)
+                .body(body)
+                .linkUrl(linkUrl)
+                .payload(payload)
+                .build();
     }
 
     private void runAfterCommitOrNow(Runnable runnable) {

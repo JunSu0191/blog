@@ -37,6 +37,10 @@ dependencies {
 	implementation 'org.jsoup:jsoup:1.18.3'
 	implementation 'org.flywaydb:flyway-core'
 	implementation 'org.flywaydb:flyway-mysql'
+	implementation 'org.apache.httpcomponents:httpclient:4.5.14'
+	implementation 'org.bouncycastle:bcprov-jdk18on:1.80'
+	implementation 'org.bitbucket.b_c:jose4j:0.9.6'
+	implementation 'nl.martijndwars:web-push:5.1.2'
 	implementation platform('software.amazon.awssdk:bom:2.30.30')
 	implementation 'software.amazon.awssdk:s3'
 	// OpenAPI / Swagger

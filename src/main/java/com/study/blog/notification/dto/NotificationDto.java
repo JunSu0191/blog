@@ -14,9 +14,11 @@ public class NotificationDto {
         private String type;
         private String title;
         private String body;
+        private String linkUrl;
         private Map<String, Object> payload;
         private LocalDateTime createdAt;
         private LocalDateTime readAt;
+        private boolean isRead;
         private LocalDateTime archivedAt;
     }
 

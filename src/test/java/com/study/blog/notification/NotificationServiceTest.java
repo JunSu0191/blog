@@ -91,6 +91,7 @@ class NotificationServiceTest {
         Notification saved = captor.getValue();
         assertThat(saved.getType()).isEqualTo("POST_COMMENT");
         assertThat(saved.getUser().getId()).isEqualTo(10L);
+        assertThat(saved.getLinkUrl()).isEqualTo("/posts/100");
         assertThat(saved.getPayload()).containsEntry("postId", 100L);
         assertThat(saved.getPayload()).containsEntry("commentId", 55L);
         assertThat(saved.getPayload()).containsEntry("commenterId", 2L);
@@ -113,5 +114,38 @@ class NotificationServiceTest {
         verify(userRepository, never()).findById(anyLong());
         verify(notificationRepository, never()).saveAndFlush(any(Notification.class));
         verify(notificationDeliveryChannel, never()).deliver(any(Notification.class), any());
+    }
+
+    @Test
+    void createFriendRequestReceivedNotificationShouldCreateAndPush() {
+        User target = User.builder().id(20L).username("target").name("Target").build();
+        when(userRepository.findById(20L)).thenReturn(Optional.of(target));
+        when(notificationRepository.saveAndFlush(any(Notification.class))).thenAnswer(invocation -> {
+            Notification n = invocation.getArgument(0);
+            n.setId(111L);
+            return n;
+        });
+
+        notificationService.createFriendRequestReceivedNotification(
+                20L,
+                101L,
+                12L,
+                "홍길동",
+                "길동",
+                "hong12");
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).saveAndFlush(captor.capture());
+
+        Notification saved = captor.getValue();
+        assertThat(saved.getType()).isEqualTo("FRIEND_REQUEST_RECEIVED");
+        assertThat(saved.getLinkUrl()).isEqualTo("/chat");
+        assertThat(saved.getPayload()).containsEntry("requestId", 101L);
+        assertThat(saved.getPayload()).containsEntry("requesterId", 12L);
+        assertThat(saved.getPayload()).containsEntry("targetUserId", 20L);
+        assertThat(saved.getPayload()).containsEntry("requesterNickname", "길동");
+        assertThat(saved.getPayload()).containsEntry("requesterUsername", "hong12");
+
+        verify(notificationDeliveryChannel).deliver(any(Notification.class), any());
     }
 }
