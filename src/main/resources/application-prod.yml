@@ -57,6 +57,9 @@ app:
   web-base-url: ${APP_WEB_BASE_URL}
   api-base-url: ${APP_API_BASE_URL}
   public-base-url: ${APP_PUBLIC_BASE_URL}
+  share:
+    spa-index-location: ${APP_SHARE_SPA_INDEX_LOCATION:}
+    default-og-image-url: ${APP_SHARE_DEFAULT_OG_IMAGE_URL:}
   upload:
     public-base-url: ${APP_UPLOAD_PUBLIC_BASE_URL}
   storage:

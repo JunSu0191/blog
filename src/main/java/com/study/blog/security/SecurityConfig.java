@@ -67,6 +67,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/posts/drafts/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/api/posts", "/api/posts/*", "/api/posts/*/related")
                         .permitAll()
+                        .requestMatchers(HttpMethod.GET, "/posts/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/categories", "/api/categories/*").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/comments/posts/*", "/api/comments/*/replies").permitAll()
                         .requestMatchers(HttpMethod.GET,

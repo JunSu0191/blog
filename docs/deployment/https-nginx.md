@@ -69,6 +69,17 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    location /posts/ {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+    }
+
     location /api/ {
         proxy_pass http://127.0.0.1:8080;
         proxy_http_version 1.1;
@@ -154,6 +165,27 @@ sudo systemctl reload nginx
 ```
 
 ## 4. 프록시 헤더
+
+운영에서 게시글 공유 메타를 서버 HTML에 삽입하려면 `/posts/{id}` 최초 요청이 백엔드로 전달되어야 합니다. `location /posts/` 블록은 `location /`보다 앞에 선언하고, 백엔드에는 프론트 빌드 HTML 경로와 기본 OG 이미지를 아래처럼 설정합니다.
+
+```bash
+APP_SHARE_SPA_INDEX_LOCATION=file:/var/www/blog-front/index.html
+APP_SHARE_DEFAULT_OG_IMAGE_URL=https://blog-pause.com/og/default-post.png
+```
+
+기본 OG 이미지 파일은 백엔드가 생성하지 않습니다. 운영 서버에서 프론트 정적 루트에 직접 배치해야 합니다.
+
+```bash
+sudo mkdir -p /var/www/blog-front/og
+sudo cp /path/to/default-post.png /var/www/blog-front/og/default-post.png
+sudo chmod 644 /var/www/blog-front/og/default-post.png
+```
+
+배치 후에는 아래처럼 공개 접근이 되는지 확인합니다.
+
+```bash
+curl -I https://blog-pause.com/og/default-post.png
+```
 
 - `X-Forwarded-*` 헤더를 유지합니다.
 - Spring 설정은 `server.forward-headers-strategy=framework` 를 사용합니다.

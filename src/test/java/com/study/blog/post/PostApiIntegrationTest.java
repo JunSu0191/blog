@@ -32,11 +32,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
         "spring.flyway.enabled=false",
-        "spring.jpa.hibernate.ddl-auto=create-drop"
+        "spring.jpa.hibernate.ddl-auto=create-drop",
+        "app.public-base-url=https://blog-pause.com",
+        "app.share.spa-index-location=classpath:post-share-index.html",
+        "app.share.default-og-image-url=https://blog-pause.com/assets/default-og.png"
 })
 @AutoConfigureMockMvc
 @Transactional
@@ -806,6 +811,104 @@ class PostApiIntegrationTest {
                 .get(0);
         assertThat(listItem.path("series").path("id").asLong()).isEqualTo(seriesId);
         assertThat(listItem.path("series").path("postCount").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void postSharePageShouldRenderMetaTagsFromPublishedPost() throws Exception {
+        String publishBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Shareable Post",
+                "subtitle", "공유용 부제목",
+                "categoryId", category.getId(),
+                "thumbnailUrl", "/upload/share-thumb.png",
+                "contentJson", sampleContentJson("공유 본문"),
+                "publishNow", true
+        ));
+
+        String publishResponse = mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(publishBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long postId = objectMapper.readTree(publishResponse).path("data").path("id").asLong();
+
+        String html = mockMvc.perform(get("/posts/{postId}", postId))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("no-cache")))
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(html).contains("<title>Shareable Post | blog-pause</title>");
+        assertThat(html).contains("<meta name=\"description\" content=\"공유용 부제목\">");
+        assertThat(html).contains("<meta property=\"og:type\" content=\"article\">");
+        assertThat(html).contains("<meta property=\"og:site_name\" content=\"blog-pause\">");
+        assertThat(html).contains("<meta property=\"og:title\" content=\"Shareable Post\">");
+        assertThat(html).contains("<meta property=\"og:description\" content=\"공유용 부제목\">");
+        assertThat(html).contains("<meta property=\"og:image\" content=\"https://blog-pause.com/upload/share-thumb.png\">");
+        assertThat(html).contains("<meta property=\"og:url\" content=\"https://blog-pause.com/posts/" + postId + "\">");
+        assertThat(html).contains("<link rel=\"canonical\" href=\"https://blog-pause.com/posts/" + postId + "\">");
+        assertThat(html).contains("<meta name=\"twitter:card\" content=\"summary_large_image\">");
+        assertThat(html).contains("<meta name=\"twitter:title\" content=\"Shareable Post\">");
+        assertThat(html).contains("<meta name=\"twitter:description\" content=\"공유용 부제목\">");
+        assertThat(html).contains("<meta name=\"twitter:image\" content=\"https://blog-pause.com/upload/share-thumb.png\">");
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void postSharePageShouldFallbackToDefaultOgImage() throws Exception {
+        String publishBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Share Fallback",
+                "categoryId", category.getId(),
+                "contentJson", sampleContentJson("썸네일 없는 본문"),
+                "publishNow", true
+        ));
+
+        String publishResponse = mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(publishBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long postId = objectMapper.readTree(publishResponse).path("data").path("id").asLong();
+
+        String html = mockMvc.perform(get("/posts/{postId}", postId))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        assertThat(html).contains("<meta property=\"og:image\" content=\"https://blog-pause.com/assets/default-og.png\">");
+        assertThat(html).contains("<meta name=\"twitter:image\" content=\"https://blog-pause.com/assets/default-og.png\">");
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void postSharePageShouldReturnNotFoundForDraft() throws Exception {
+        String draftBody = objectMapper.writeValueAsString(Map.of(
+                "title", "Draft Only",
+                "categoryId", category.getId(),
+                "contentJson", sampleContentJson("draft body")
+        ));
+
+        String response = mockMvc.perform(post("/api/posts/drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(draftBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        long draftId = objectMapper.readTree(response).path("data").path("id").asLong();
+
+        mockMvc.perform(get("/posts/{postId}", draftId))
+                .andExpect(status().isNotFound());
     }
 
     private Map<String, Object> sampleContentJson(String text) {
