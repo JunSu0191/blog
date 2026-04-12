@@ -400,6 +400,7 @@ Authorization: Bearer <JWT>
 
 | Method | Path | 설명 | 인증 |
 |---|---|---|---|
+| GET | `/api/notifications/push/public-key` | 웹 푸시 VAPID 공개키 조회 | 공개 |
 | GET | `/api/notifications` | 알림 목록(커서) | JWT 권장* |
 | POST | `/api/notifications/{id}/read` | 단건 읽음 | JWT 권장* |
 | POST | `/api/notifications/read-all` | 전체 읽음 | JWT 권장* |

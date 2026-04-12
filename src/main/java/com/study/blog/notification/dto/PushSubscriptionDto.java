@@ -44,4 +44,9 @@ public class PushSubscriptionDto {
         private LocalDateTime lastUsedAt;
         private boolean active;
     }
+
+    @Data
+    public static class PublicKeyResponse {
+        private String publicKey;
+    }
 }
