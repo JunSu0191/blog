@@ -222,8 +222,10 @@ public class SeriesService {
         if (value == null) {
             return "";
         }
-        return Normalizer.normalize(value, Normalizer.Form.NFKD)
-                .replaceAll("\\p{M}+", "")
+        String normalized = Normalizer.normalize(value, Normalizer.Form.NFKD)
+                .replaceAll("\\p{M}+", "");
+
+        return Normalizer.normalize(normalized, Normalizer.Form.NFC)
                 .toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9가-힣\\s-]", " ")
                 .trim()

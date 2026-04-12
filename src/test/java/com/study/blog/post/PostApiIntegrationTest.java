@@ -377,6 +377,37 @@ class PostApiIntegrationTest {
 
     @Test
     @WithMockUser(username = "writer")
+    void createPostShouldCreateSeriesWhenOnlyKoreanSeriesTitleIsProvided() throws Exception {
+        String createBody = objectMapper.writeValueAsString(Map.of(
+                "title", "한글 시리즈 포스트",
+                "subtitle", "부제",
+                "categoryId", category.getId(),
+                "tagIds", List.of(tag.getId()),
+                "thumbnailUrl", "https://example.com/thumb-ko.png",
+                "contentJson", sampleContentJson("본문"),
+                "publishNow", true,
+                "seriesTitle", "테스트",
+                "seriesOrder", 1
+        ));
+
+        String createResponse = mockMvc.perform(post("/api/posts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(createBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode createdData = objectMapper.readTree(createResponse).path("data");
+        assertThat(createdData.path("series").path("id").asLong()).isPositive();
+        assertThat(createdData.path("series").path("title").asText()).isEqualTo("테스트");
+        assertThat(createdData.path("series").path("slug").asText()).isEqualTo("테스트");
+        assertThat(createdData.path("series").path("order").asInt()).isEqualTo(1);
+        assertThat(postSeriesRepository.existsBySlug("테스트")).isTrue();
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
     void draftShouldPersistSeriesFieldsAndExposeSeriesObject() throws Exception {
         String draftBody = objectMapper.writeValueAsString(Map.of(
                 "title", "Draft With Series",
@@ -423,6 +454,33 @@ class PostApiIntegrationTest {
         assertThat(updatedDraftNode.path("series").path("title").asText()).isEqualTo("Draft Series");
         assertThat(updatedDraftNode.path("series").path("slug").asText()).isEqualTo("draft-series");
         assertThat(updatedDraftNode.path("series").path("order").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @WithMockUser(username = "writer")
+    void draftShouldCreateSeriesWhenOnlyKoreanSeriesTitleIsProvided() throws Exception {
+        String draftBody = objectMapper.writeValueAsString(Map.of(
+                "title", "한글 시리즈 초안",
+                "subtitle", "부제",
+                "categoryId", category.getId(),
+                "thumbnailUrl", "https://example.com/thumb-ko.png",
+                "contentJson", sampleContentJson("초안 본문"),
+                "seriesTitle", "테스트",
+                "seriesOrder", 1
+        ));
+
+        String draftCreateResponse = mockMvc.perform(post("/api/posts/drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(draftBody))
+                .andExpect(status().isCreated())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode createdDraftNode = objectMapper.readTree(draftCreateResponse).path("data");
+        assertThat(createdDraftNode.path("series").path("title").asText()).isEqualTo("테스트");
+        assertThat(createdDraftNode.path("series").path("slug").asText()).isEqualTo("테스트");
+        assertThat(createdDraftNode.path("series").path("order").asInt()).isEqualTo(1);
     }
 
     @Test
