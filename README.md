@@ -391,10 +391,12 @@ Authorization: Bearer <JWT>
 | POST | `/api/chat/conversations` | 대화방 생성(DIRECT/GROUP) | JWT 권장* |
 | POST | `/api/chat/conversations/direct/{otherUserId}` | 1:1 대화방 생성/재사용 | JWT 권장* |
 | GET | `/api/chat/users` | 채팅 대상 사용자 목록 | JWT 권장* |
-| GET | `/api/chat/conversations` | 내 대화방 목록(unread 포함) | JWT 권장* |
+| GET | `/api/chat/conversations` | 내 대화방 목록(unread, 참여자 수/목록 포함) | JWT 권장* |
 | GET | `/api/chat/conversations/{id}/messages` | 메시지 목록(커서) | JWT 권장* |
 | POST | `/api/chat/conversations/{id}/read` | 읽음 처리 | JWT 권장* |
 | DELETE | `/api/chat/conversations/{id}` | 대화방 나가기 | JWT 권장* |
+| GET | `/api/chats/threads` | 스레드 목록(참여자 수/목록 포함) | JWT 권장* |
+| GET | `/api/chats/threads/{threadId}/members` | 스레드 참여자 목록 조회 | JWT 권장* |
 
 ### Notifications
 

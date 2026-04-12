@@ -67,7 +67,15 @@ public class ChatContractDto {
         private ChatDto.MessageResponse lastMessage;
         private LocalDateTime lastActivityAt;
         private Long unreadMessageCount;
+        private Long participantCount;
+        private java.util.List<ChatDto.ChatUserResponse> participants;
         private boolean hidden;
+    }
+
+    @Data
+    public static class ThreadParticipantsResponse {
+        private Long participantCount;
+        private java.util.List<ChatDto.ChatUserResponse> participants;
     }
 
     @Data

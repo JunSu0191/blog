@@ -32,6 +32,15 @@ public class ChatThreadService {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
+    public ChatContractDto.ThreadParticipantsResponse listThreadParticipants(Long userId, Long threadId) {
+        ChatDto.ConversationParticipantsResponse source = chatService.listConversationParticipants(userId, threadId);
+        ChatContractDto.ThreadParticipantsResponse response = new ChatContractDto.ThreadParticipantsResponse();
+        response.setParticipantCount(source.getParticipantCount());
+        response.setParticipants(source.getParticipants());
+        return response;
+    }
+
     public void hideThread(Long userId, Long threadId) {
         chatService.hideConversation(userId, threadId);
     }
@@ -76,6 +85,8 @@ public class ChatThreadService {
         response.setLastMessage(source.getLastMessage());
         response.setLastActivityAt(source.getLastActivityAt());
         response.setUnreadMessageCount(source.getUnreadMessageCount());
+        response.setParticipantCount(source.getParticipantCount());
+        response.setParticipants(source.getParticipants());
         response.setHidden(source.isHidden());
         return response;
     }

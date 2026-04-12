@@ -38,6 +38,14 @@ public class ChatThreadController {
         return ApiResponseFactory.ok(chatThreadService.listThreads(userId, parseConversationType(type)));
     }
 
+    @GetMapping("/threads/{threadId}/members")
+    public ResponseEntity<ApiResponseTemplate<ChatContractDto.ThreadParticipantsResponse>> listThreadParticipants(
+            @RequestHeader(value = "X-User-Id", required = false) Long xUserId,
+            @PathVariable Long threadId) {
+        Long userId = currentUserResolver.resolveFromRest(xUserId);
+        return ApiResponseFactory.ok(chatThreadService.listThreadParticipants(userId, threadId));
+    }
+
     @PatchMapping("/threads/{threadId}/hide")
     public ResponseEntity<ApiResponseTemplate<Void>> hideThread(
             @RequestHeader(value = "X-User-Id", required = false) Long xUserId,

@@ -81,6 +81,36 @@ public interface ChatConversationMemberRepository extends JpaRepository<ChatConv
             """)
     List<ConversationMemberNameProjection> findMemberNamesByConversationId(@Param("conversationId") Long conversationId);
 
+    @Query("""
+            select
+                m.conversation.id as conversationId,
+                m.user.id as userId,
+                m.user.username as username,
+                m.user.name as name,
+                m.user.nickname as nickname
+            from ChatConversationMember m
+            where m.conversation.id in :conversationIds
+              and (m.conversation.type = com.study.blog.chat.ConversationType.DIRECT or m.leftAt is null)
+            order by m.conversation.id asc, m.joinedAt asc, m.user.id asc
+            """)
+    List<ConversationParticipantProjection> findParticipantSummariesByConversationIds(
+            @Param("conversationIds") Collection<Long> conversationIds);
+
+    @Query("""
+            select
+                m.conversation.id as conversationId,
+                m.user.id as userId,
+                m.user.username as username,
+                m.user.name as name,
+                m.user.nickname as nickname
+            from ChatConversationMember m
+            where m.conversation.id = :conversationId
+              and (m.conversation.type = com.study.blog.chat.ConversationType.DIRECT or m.leftAt is null)
+            order by m.joinedAt asc, m.user.id asc
+            """)
+    List<ConversationParticipantProjection> findParticipantSummariesByConversationId(
+            @Param("conversationId") Long conversationId);
+
     @Query(value = """
             select count(1)
             from chat_message m

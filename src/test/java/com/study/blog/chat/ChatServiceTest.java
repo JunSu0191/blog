@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -94,9 +95,9 @@ class ChatServiceTest {
                         .conversation(conversation)
                         .user(other)
                         .build()));
-        ConversationMemberNameProjection directMe = memberName(10L, 1L, "U1");
-        ConversationMemberNameProjection directOther = memberName(10L, 2L, "U2");
-        when(conversationMemberRepository.findMemberNamesByConversationId(10L))
+        ConversationParticipantProjection directMe = participant(10L, 1L, "u1", "U1", "U1");
+        ConversationParticipantProjection directOther = participant(10L, 2L, "u2", "U2", "U2");
+        when(conversationMemberRepository.findParticipantSummariesByConversationId(10L))
                 .thenReturn(List.of(directMe, directOther));
         when(conversationRepository.save(any(ChatConversation.class))).thenReturn(conversation);
 
@@ -150,6 +151,57 @@ class ChatServiceTest {
     }
 
     @Test
+    void createGroupConversationShouldUseOnlyRequestedMembers() {
+        User requester = User.builder().id(1L).username("u1").name("U1").nickname("u1").build();
+        User invited = User.builder().id(2L).username("u2").name("U2").nickname("u2").build();
+        ChatConversation conversation = ChatConversation.builder()
+                .id(77L)
+                .type(ConversationType.GROUP)
+                .title("팀 채팅")
+                .createdBy(requester)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(requester));
+        when(userRepository.findAllById(anyCollection())).thenReturn(List.of(requester, invited));
+        when(conversationRepository.save(any(ChatConversation.class))).thenReturn(conversation);
+        when(conversationMemberRepository.findParticipantSummariesByConversationId(77L))
+                .thenReturn(List.of(
+                        participant(77L, 1L, "u1", "U1", "u1"),
+                        participant(77L, 2L, "u2", "U2", "u2")));
+
+        ChatDto.CreateConversationRequest req = new ChatDto.CreateConversationRequest();
+        req.setType(ConversationType.GROUP);
+        req.setTitle("팀 채팅");
+        req.setMemberIds(List.of(2L));
+
+        ChatDto.ConversationSummaryResponse response = chatService.createConversation(1L, req);
+
+        assertThat(response.getParticipantCount()).isEqualTo(2L);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Collection<ChatConversationMember>> captor = ArgumentCaptor.forClass(Collection.class);
+        verify(conversationMemberRepository).saveAll(captor.capture());
+        assertThat(captor.getValue())
+                .extracting(member -> member.getUser().getId())
+                .containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void createGroupConversationShouldRejectEmptyInvites() {
+        User requester = User.builder().id(1L).username("u1").name("U1").nickname("u1").build();
+        when(userRepository.findById(1L)).thenReturn(Optional.of(requester));
+
+        ChatDto.CreateConversationRequest req = new ChatDto.CreateConversationRequest();
+        req.setType(ConversationType.GROUP);
+        req.setTitle("빈 채팅");
+        req.setMemberIds(List.of());
+
+        assertThatThrownBy(() -> chatService.createConversation(1L, req))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("그룹 대화에는 초대할 사용자를 최소 1명 이상 선택해야 합니다.");
+    }
+
+    @Test
     void listConversationsShouldIncludeUnreadMessageCount() {
         ConversationSummaryProjection row = mock(ConversationSummaryProjection.class);
         LocalDateTime now = LocalDateTime.now();
@@ -165,11 +217,13 @@ class ChatServiceTest {
         when(row.getUnreadMessageCount()).thenReturn(4L);
         when(row.getHiddenAt()).thenReturn(null);
         when(conversationRepository.findConversationSummariesByUserId(1L, null)).thenReturn(List.of(row));
-        ConversationMemberNameProjection groupMe = memberName(20L, 1L, "나");
-        ConversationMemberNameProjection groupMember = memberName(20L, 2L, "팀원");
-        when(conversationMemberRepository.findMemberNamesByConversationIds(List.of(20L)))
+        ConversationParticipantProjection groupMe = participant(20L, 1L, "me", "나", "나");
+        ConversationParticipantProjection groupMember = participant(20L, 2L, "member", "팀원", "팀원");
+        when(conversationMemberRepository.findParticipantSummariesByConversationIds(List.of(20L)))
                 .thenReturn(List.of(groupMe, groupMember));
-        when(userAvatarService.getAvatarUrls(anyCollection())).thenReturn(Map.of(7L, "https://cdn.example.com/u7.png"));
+        when(userAvatarService.getAvatarUrls(anyCollection())).thenReturn(Map.of(
+                7L, "https://cdn.example.com/u7.png",
+                2L, "https://cdn.example.com/u2.png"));
 
         List<ChatDto.ConversationSummaryResponse> responses = chatService.listConversations(1L);
 
@@ -177,7 +231,32 @@ class ChatServiceTest {
         assertThat(responses.get(0).getUnreadMessageCount()).isEqualTo(4L);
         assertThat(responses.get(0).getLastActivityAt()).isEqualTo(now);
         assertThat(responses.get(0).getDisplayTitle()).isEqualTo("팀 채팅");
+        assertThat(responses.get(0).getParticipantCount()).isEqualTo(2L);
+        assertThat(responses.get(0).getParticipants()).hasSize(2);
+        assertThat(responses.get(0).getParticipants().get(1).getAvatarUrl()).isEqualTo("https://cdn.example.com/u2.png");
         assertThat(responses.get(0).getLastMessage().getSenderAvatarUrl()).isEqualTo("https://cdn.example.com/u7.png");
+    }
+
+    @Test
+    void listConversationParticipantsShouldReturnActiveParticipantsOnly() {
+        Long conversationId = 55L;
+        Long userId = 1L;
+
+        when(conversationMemberRepository.existsActiveByConversationIdAndUserId(conversationId, userId)).thenReturn(true);
+        when(conversationMemberRepository.findParticipantSummariesByConversationId(conversationId))
+                .thenReturn(List.of(
+                        participant(conversationId, 1L, "me", "나", "준수"),
+                        participant(conversationId, 2L, "other", "상대", "민지")));
+        when(userAvatarService.getAvatarUrls(anyCollection()))
+                .thenReturn(Map.of(2L, "https://cdn.example.com/u2.png"));
+
+        ChatDto.ConversationParticipantsResponse response = chatService.listConversationParticipants(userId, conversationId);
+
+        assertThat(response.getParticipantCount()).isEqualTo(2L);
+        assertThat(response.getParticipants()).hasSize(2);
+        assertThat(response.getParticipants().get(0).isMe()).isTrue();
+        assertThat(response.getParticipants().get(1).getNickname()).isEqualTo("민지");
+        assertThat(response.getParticipants().get(1).getAvatarUrl()).isEqualTo("https://cdn.example.com/u2.png");
     }
 
     @Test
@@ -416,11 +495,36 @@ class ChatServiceTest {
         verify(realtimeEventPublisher, never()).publishUserEvent(eq("u10"), eq(leaverId), eq("chat.group.member.left"), any());
     }
 
-    private ConversationMemberNameProjection memberName(Long conversationId, Long userId, String userName) {
-        ConversationMemberNameProjection projection = mock(ConversationMemberNameProjection.class);
-        lenient().when(projection.getConversationId()).thenReturn(conversationId);
-        lenient().when(projection.getUserId()).thenReturn(userId);
-        lenient().when(projection.getUserName()).thenReturn(userName);
-        return projection;
+    private ConversationParticipantProjection participant(Long conversationId,
+                                                          Long userId,
+                                                          String username,
+                                                          String name,
+                                                          String nickname) {
+        return new ConversationParticipantProjection() {
+            @Override
+            public Long getConversationId() {
+                return conversationId;
+            }
+
+            @Override
+            public Long getUserId() {
+                return userId;
+            }
+
+            @Override
+            public String getUsername() {
+                return username;
+            }
+
+            @Override
+            public String getName() {
+                return name;
+            }
+
+            @Override
+            public String getNickname() {
+                return nickname;
+            }
+        };
     }
 }
