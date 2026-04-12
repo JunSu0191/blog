@@ -5,6 +5,7 @@ import com.study.blog.chat.social.FriendshipService;
 import com.study.blog.notification.NotificationService;
 import com.study.blog.realtime.RealtimeEventPublisher;
 import com.study.blog.realtime.UserEventType;
+import com.study.blog.user.UserAvatarService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -38,6 +39,7 @@ public class ChatService {
     private final FriendshipService friendshipService;
     private final RealtimeEventPublisher realtimeEventPublisher;
     private final NotificationService notificationService;
+    private final UserAvatarService userAvatarService;
 
     public ChatService(ChatConversationRepository conversationRepository,
                        ChatConversationMemberRepository conversationMemberRepository,
@@ -45,7 +47,8 @@ public class ChatService {
                        UserRepository userRepository,
                        FriendshipService friendshipService,
                        RealtimeEventPublisher realtimeEventPublisher,
-                       NotificationService notificationService) {
+                       NotificationService notificationService,
+                       UserAvatarService userAvatarService) {
         this.conversationRepository = conversationRepository;
         this.conversationMemberRepository = conversationMemberRepository;
         this.messageRepository = messageRepository;
@@ -53,6 +56,7 @@ public class ChatService {
         this.friendshipService = friendshipService;
         this.realtimeEventPublisher = realtimeEventPublisher;
         this.notificationService = notificationService;
+        this.userAvatarService = userAvatarService;
     }
 
     public ChatDto.ConversationSummaryResponse createConversation(Long requesterId, ChatDto.CreateConversationRequest req) {
@@ -102,20 +106,28 @@ public class ChatService {
                 type != null ? type.name() : null);
         Map<Long, List<ConversationMemberNameProjection>> memberNamesByConversationId =
                 loadMemberNamesForConversations(rows);
+        Map<Long, String> avatarUrls = loadConversationAvatarUrls(rows, memberNamesByConversationId);
         return rows.stream()
-                .map(row -> toSummaryFromProjection(row, userId, memberNamesByConversationId.get(row.getConversationId())))
+                .map(row -> toSummaryFromProjection(
+                        row,
+                        userId,
+                        memberNamesByConversationId.get(row.getConversationId()),
+                        avatarUrls))
                 .toList();
     }
 
     @Transactional(readOnly = true)
     public List<ChatDto.ChatUserResponse> listChatUsers(Long userId) {
-        return userRepository.findByDeletedYnOrderByIdAsc("N").stream()
+        List<User> users = userRepository.findByDeletedYnOrderByIdAsc("N");
+        Map<Long, String> avatarUrls = userAvatarService.getAvatarUrls(users.stream().map(User::getId).toList());
+        return users.stream()
                 .map(user -> {
                     ChatDto.ChatUserResponse r = new ChatDto.ChatUserResponse();
                     r.setUserId(user.getId());
                     r.setUsername(user.getUsername());
                     r.setName(user.getName());
                     r.setNickname(user.getNickname());
+                    r.setAvatarUrl(avatarUrls.get(user.getId()));
                     r.setMe(user.getId().equals(userId));
                     return r;
                 })
@@ -138,14 +150,18 @@ public class ChatService {
             cursorId = cursor.getId();
         }
 
-        return messageRepository.findPageByConversationIdWithCursor(
+        List<ChatMessage> messages = messageRepository.findPageByConversationIdWithCursor(
                         conversationId,
                         member.getLastClearedAt(),
                         cursorCreatedAt,
                         cursorId,
-                        PageRequest.of(0, normalizedSize))
-                .stream()
-                .map(this::toMessageResponse)
+                        PageRequest.of(0, normalizedSize));
+        Map<Long, String> avatarUrls = userAvatarService.getAvatarUrls(messages.stream()
+                .map(message -> message.getSender() != null ? message.getSender().getId() : null)
+                .filter(Objects::nonNull)
+                .toList());
+        return messages.stream()
+                .map(message -> toMessageResponse(message, avatarUrls))
                 .toList();
     }
 
@@ -248,7 +264,7 @@ public class ChatService {
         Optional<ChatMessage> existing = messageRepository.findByConversation_IdAndSender_IdAndClientMsgId(
                 conversationId, senderId, req.getClientMsgId());
         if (existing.isPresent()) {
-            return new SendResult(toMessageResponse(existing.get()), true);
+            return new SendResult(toMessageResponse(existing.get(), userAvatarService.getAvatarUrls(List.of(senderId))), true);
         }
 
         ChatConversation conversation = conversationRepository.findById(conversationId)
@@ -282,7 +298,7 @@ public class ChatService {
                 .build());
 
         List<Long> participants = conversationMemberRepository.findUserIdsByConversationId(conversationId);
-        ChatDto.MessageResponse messageResponse = toMessageResponse(saved);
+        ChatDto.MessageResponse messageResponse = toMessageResponse(saved, userAvatarService.getAvatarUrls(List.of(senderId)));
 
         // DB 트랜잭션이 성공적으로 커밋된 뒤에만 실시간/알림을 전송한다.
         // (커밋 전에 보내면 롤백 시 "유령 이벤트"가 생길 수 있음)
@@ -440,11 +456,12 @@ public class ChatService {
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
     }
 
-    private ChatDto.MessageResponse toMessageResponse(ChatMessage message) {
+    private ChatDto.MessageResponse toMessageResponse(ChatMessage message, Map<Long, String> avatarUrls) {
         ChatDto.MessageResponse r = new ChatDto.MessageResponse();
         r.setId(message.getId());
         r.setConversationId(message.getConversation().getId());
         r.setSenderId(message.getSender().getId());
+        r.setSenderAvatarUrl(avatarUrls.get(message.getSender().getId()));
         r.setClientMsgId(message.getClientMsgId());
         r.setType(message.getType());
         r.setBody(message.getBody());
@@ -463,9 +480,13 @@ public class ChatService {
         r.setTitle(conversation.getTitle());
         List<ConversationMemberNameProjection> memberNames =
                 conversationMemberRepository.findMemberNamesByConversationId(conversation.getId());
+        Map<Long, String> avatarUrls = userAvatarService.getAvatarUrls(buildConversationAvatarLookupIds(
+                memberNames,
+                lastMessage != null && lastMessage.getSender() != null ? lastMessage.getSender().getId() : null));
         r.setDisplayTitle(resolveDisplayTitle(conversation.getType(), conversation.getTitle(), currentUserId, memberNames));
+        r.setAvatarUrl(resolveConversationAvatarUrl(conversation.getType(), currentUserId, memberNames, avatarUrls));
         r.setDirectKey(conversation.getDirectKey());
-        r.setLastMessage(lastMessage != null ? toMessageResponse(lastMessage) : null);
+        r.setLastMessage(lastMessage != null ? toMessageResponse(lastMessage, avatarUrls) : null);
         r.setLastActivityAt(lastMessage != null ? lastMessage.getCreatedAt() : conversation.getCreatedAt());
         r.setUnreadMessageCount(0L);
         r.setHidden(false);
@@ -474,12 +495,14 @@ public class ChatService {
 
     private ChatDto.ConversationSummaryResponse toSummaryFromProjection(ConversationSummaryProjection p,
                                                                         Long currentUserId,
-                                                                        List<ConversationMemberNameProjection> memberNames) {
+                                                                        List<ConversationMemberNameProjection> memberNames,
+                                                                        Map<Long, String> avatarUrls) {
         ChatDto.ConversationSummaryResponse r = new ChatDto.ConversationSummaryResponse();
         r.setConversationId(p.getConversationId());
         r.setType(ConversationType.valueOf(p.getConversationType()));
         r.setTitle(p.getTitle());
         r.setDisplayTitle(resolveDisplayTitle(r.getType(), p.getTitle(), currentUserId, memberNames));
+        r.setAvatarUrl(resolveConversationAvatarUrl(r.getType(), currentUserId, memberNames, avatarUrls));
         r.setDirectKey(p.getDirectKey());
         r.setUnreadMessageCount(p.getUnreadMessageCount() != null ? p.getUnreadMessageCount() : 0L);
         r.setHidden(p.getHiddenAt() != null);
@@ -489,6 +512,7 @@ public class ChatService {
             m.setId(p.getLastMessageId());
             m.setConversationId(p.getConversationId());
             m.setSenderId(p.getLastSenderId());
+            m.setSenderAvatarUrl(avatarUrls.get(p.getLastSenderId()));
             m.setBody(p.getLastMessageBody());
             m.setCreatedAt(p.getLastMessageCreatedAt());
             r.setLastMessage(m);
@@ -576,6 +600,51 @@ public class ChatService {
             return String.join(", ", candidates);
         }
         return candidates.get(0) + ", " + candidates.get(1) + " ...";
+    }
+
+    private Map<Long, String> loadConversationAvatarUrls(List<ConversationSummaryProjection> rows,
+                                                         Map<Long, List<ConversationMemberNameProjection>> memberNamesByConversationId) {
+        Set<Long> lookupIds = new LinkedHashSet<>();
+        rows.forEach(row -> {
+            lookupIds.add(row.getLastSenderId());
+            List<ConversationMemberNameProjection> memberNames = memberNamesByConversationId.get(row.getConversationId());
+            if (memberNames != null) {
+                memberNames.stream()
+                        .map(ConversationMemberNameProjection::getUserId)
+                        .forEach(lookupIds::add);
+            }
+        });
+        return userAvatarService.getAvatarUrls(lookupIds);
+    }
+
+    private Set<Long> buildConversationAvatarLookupIds(List<ConversationMemberNameProjection> memberNames, Long senderId) {
+        Set<Long> lookupIds = new LinkedHashSet<>();
+        if (senderId != null) {
+            lookupIds.add(senderId);
+        }
+        if (memberNames != null) {
+            memberNames.stream()
+                    .map(ConversationMemberNameProjection::getUserId)
+                    .forEach(lookupIds::add);
+        }
+        return lookupIds;
+    }
+
+    private String resolveConversationAvatarUrl(ConversationType type,
+                                                Long currentUserId,
+                                                List<ConversationMemberNameProjection> memberNames,
+                                                Map<Long, String> avatarUrls) {
+        if (type != ConversationType.DIRECT || memberNames == null || memberNames.isEmpty()) {
+            return null;
+        }
+
+        for (ConversationMemberNameProjection member : memberNames) {
+            if (!Objects.equals(member.getUserId(), currentUserId)) {
+                return avatarUrls.get(member.getUserId());
+            }
+        }
+
+        return avatarUrls.get(memberNames.get(0).getUserId());
     }
 
     private boolean isNotBlank(String value) {

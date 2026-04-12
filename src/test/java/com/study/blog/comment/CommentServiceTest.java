@@ -4,6 +4,7 @@ import com.study.blog.comment.dto.CommentDto;
 import com.study.blog.notification.NotificationService;
 import com.study.blog.post.Post;
 import com.study.blog.post.PostRepository;
+import com.study.blog.user.UserAvatarService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,6 +14,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -30,12 +33,15 @@ class CommentServiceTest {
     private UserRepository userRepository;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private UserAvatarService userAvatarService;
 
     private CommentService commentService;
 
     @BeforeEach
     void setUp() {
-        commentService = new CommentService(commentRepository, postRepository, userRepository, notificationService);
+        commentService = new CommentService(commentRepository, postRepository, userRepository, notificationService, userAvatarService);
+        lenient().when(userAvatarService.getAvatarUrls(any())).thenReturn(Map.of());
     }
 
     @Test
@@ -60,6 +66,7 @@ class CommentServiceTest {
 
         assertThat(response.id).isEqualTo(55L);
         assertThat(response.username).isEqualTo("u2");
+        assertThat(response.avatarUrl).isNull();
         verify(notificationService).createPostCommentNotification(
                 1L,
                 2L,
@@ -136,5 +143,30 @@ class CommentServiceTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("댓글을 찾을 수 없습니다");
         verify(commentRepository, never()).save(any(Comment.class));
+    }
+
+    @Test
+    void getCommentsShouldIncludeAvatarUrl() {
+        User user = User.builder().id(1L).username("u1").name("U1").nickname("nick").build();
+        Post post = Post.builder().id(100L).user(user).title("t").deletedYn("N").build();
+        Comment comment = Comment.builder()
+                .id(10L)
+                .post(post)
+                .user(user)
+                .content("hello")
+                .deletedYn("N")
+                .createdAt(LocalDateTime.now().minusDays(1))
+                .updatedAt(LocalDateTime.now().minusDays(1))
+                .build();
+
+        when(commentRepository.findByPost_IdAndParentIsNullAndDeletedYnOrderByCreatedAtDesc(100L, "N"))
+                .thenReturn(List.of(comment));
+        when(commentRepository.countByParent_IdAndDeletedYn(10L, "N")).thenReturn(0L);
+        when(userAvatarService.getAvatarUrls(any())).thenReturn(Map.of(1L, "https://cdn.example.com/u1.png"));
+
+        List<CommentDto.Response> responses = commentService.getCommentsByPostId(100L);
+
+        assertThat(responses).hasSize(1);
+        assertThat(responses.get(0).avatarUrl).isEqualTo("https://cdn.example.com/u1.png");
     }
 }

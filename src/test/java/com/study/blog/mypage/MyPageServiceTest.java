@@ -111,4 +111,29 @@ class MyPageServiceTest {
 
         assertThat(response.getName()).isEqualTo("u1");
     }
+
+    @Test
+    void upsertProfileShouldClearAvatarWhenExplicitNullProvided() {
+        User user = User.builder().id(1L).username("u1").name("U1").deletedYn("N").build();
+        UserProfile profile = UserProfile.builder()
+                .id(2L)
+                .user(user)
+                .avatarUrl("https://cdn.example.com/old.png")
+                .build();
+
+        when(userRepository.findById(1L)).thenReturn(Optional.of(user));
+        when(userProfileRepository.findByUser_Id(1L)).thenReturn(Optional.of(profile));
+        when(userProfileRepository.save(any(UserProfile.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(postRepository.countByUser_IdAndDeletedYn(1L, "N")).thenReturn(0L);
+        when(commentService.getCommentCountByUser(1L)).thenReturn(0L);
+        when(postLikeRepository.countByUser_IdAndDeletedYn(1L, "N")).thenReturn(0L);
+
+        MyPageDto.UpdateProfileRequest req = new MyPageDto.UpdateProfileRequest();
+        req.setAvatarUrl(null);
+
+        MyPageDto.SummaryResponse response = myPageService.upsertProfile(1L, req);
+
+        assertThat(profile.getAvatarUrl()).isNull();
+        assertThat(response.getProfile().getAvatarUrl()).isNull();
+    }
 }

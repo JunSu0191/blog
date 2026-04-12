@@ -26,6 +26,7 @@ public class ChatDto {
         private ConversationType type;
         private String title;
         private String displayTitle;
+        private String avatarUrl;
         private String directKey;
         private MessageResponse lastMessage;
         private LocalDateTime lastActivityAt;
@@ -39,6 +40,7 @@ public class ChatDto {
         private String username;
         private String name;
         private String nickname;
+        private String avatarUrl;
         private boolean me;
     }
 
@@ -58,6 +60,7 @@ public class ChatDto {
         private Long id;
         private Long conversationId;
         private Long senderId;
+        private String senderAvatarUrl;
         private String clientMsgId;
         private String type;
         private String body;

@@ -4,6 +4,7 @@ import com.study.blog.chat.dto.ChatDto;
 import com.study.blog.chat.social.FriendshipService;
 import com.study.blog.notification.NotificationService;
 import com.study.blog.realtime.RealtimeEventPublisher;
+import com.study.blog.user.UserAvatarService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.access.AccessDeniedException;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,6 +43,8 @@ class ChatServiceTest {
     private RealtimeEventPublisher realtimeEventPublisher;
     @Mock
     private NotificationService notificationService;
+    @Mock
+    private UserAvatarService userAvatarService;
 
     private ChatService chatService;
 
@@ -53,7 +57,9 @@ class ChatServiceTest {
                 userRepository,
                 friendshipService,
                 realtimeEventPublisher,
-                notificationService);
+                notificationService,
+                userAvatarService);
+        lenient().when(userAvatarService.getAvatarUrls(anyCollection())).thenReturn(Map.of());
     }
 
     @Test
@@ -103,6 +109,7 @@ class ChatServiceTest {
 
         assertThat(first.getConversationId()).isEqualTo(second.getConversationId());
         assertThat(first.getDisplayTitle()).isEqualTo("U2");
+        assertThat(first.getAvatarUrl()).isNull();
         verify(conversationRepository, times(1)).save(any(ChatConversation.class));
     }
 
@@ -137,6 +144,7 @@ class ChatServiceTest {
 
         assertThat(result.deduplicated()).isTrue();
         assertThat(result.message().getId()).isEqualTo(100L);
+        assertThat(result.message().getSenderAvatarUrl()).isNull();
         verify(messageRepository, never()).save(any(ChatMessage.class));
         verify(notificationService, never()).createChatMessageNotifications(anyLong(), anyLong(), any(), any(), anyLong(), any());
     }
@@ -161,6 +169,7 @@ class ChatServiceTest {
         ConversationMemberNameProjection groupMember = memberName(20L, 2L, "팀원");
         when(conversationMemberRepository.findMemberNamesByConversationIds(List.of(20L)))
                 .thenReturn(List.of(groupMe, groupMember));
+        when(userAvatarService.getAvatarUrls(anyCollection())).thenReturn(Map.of(7L, "https://cdn.example.com/u7.png"));
 
         List<ChatDto.ConversationSummaryResponse> responses = chatService.listConversations(1L);
 
@@ -168,6 +177,21 @@ class ChatServiceTest {
         assertThat(responses.get(0).getUnreadMessageCount()).isEqualTo(4L);
         assertThat(responses.get(0).getLastActivityAt()).isEqualTo(now);
         assertThat(responses.get(0).getDisplayTitle()).isEqualTo("팀 채팅");
+        assertThat(responses.get(0).getLastMessage().getSenderAvatarUrl()).isEqualTo("https://cdn.example.com/u7.png");
+    }
+
+    @Test
+    void listChatUsersShouldIncludeAvatarUrl() {
+        User me = User.builder().id(1L).username("u1").name("U1").nickname("me").deletedYn("N").build();
+        User other = User.builder().id(2L).username("u2").name("U2").nickname("other").deletedYn("N").build();
+        when(userRepository.findByDeletedYnOrderByIdAsc("N")).thenReturn(List.of(me, other));
+        when(userAvatarService.getAvatarUrls(anyCollection())).thenReturn(Map.of(2L, "https://cdn.example.com/u2.png"));
+
+        List<ChatDto.ChatUserResponse> responses = chatService.listChatUsers(1L);
+
+        assertThat(responses).hasSize(2);
+        assertThat(responses.get(0).isMe()).isTrue();
+        assertThat(responses.get(1).getAvatarUrl()).isEqualTo("https://cdn.example.com/u2.png");
     }
 
     @Test

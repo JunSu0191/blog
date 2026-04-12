@@ -4,6 +4,7 @@ import com.study.blog.comment.dto.CommentDto;
 import com.study.blog.notification.NotificationService;
 import com.study.blog.post.Post;
 import com.study.blog.post.PostRepository;
+import com.study.blog.user.UserAvatarService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 
@@ -16,6 +17,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
@@ -30,15 +32,18 @@ public class CommentService {
     private final PostRepository postRepository;
     private final UserRepository userRepository;
     private final NotificationService notificationService;
+    private final UserAvatarService userAvatarService;
 
     public CommentService(CommentRepository commentRepository,
                           PostRepository postRepository,
                           UserRepository userRepository,
-                          NotificationService notificationService) {
+                          NotificationService notificationService,
+                          UserAvatarService userAvatarService) {
         this.commentRepository = commentRepository;
         this.postRepository = postRepository;
         this.userRepository = userRepository;
         this.notificationService = notificationService;
+        this.userAvatarService = userAvatarService;
     }
 
     /**
@@ -46,10 +51,9 @@ public class CommentService {
      */
     public List<CommentDto.Response> getCommentsByPostId(Long postId) {
         List<Comment> comments = commentRepository.findByPost_IdAndParentIsNullAndDeletedYnOrderByCreatedAtDesc(postId, "N");
-        return comments.stream()
+        return toResponses(comments.stream()
                 .filter(comment -> comment.getDeletedAt() == null)
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
     }
 
     /**
@@ -59,11 +63,10 @@ public class CommentService {
         Comment parent = commentRepository.findByIdAndDeletedYn(commentId, "N")
                 .orElseThrow(() -> new IllegalArgumentException("댓글을 찾을 수 없습니다: " + commentId));
 
-        return commentRepository.findByParent_IdAndDeletedYnOrderByCreatedAtAsc(parent.getId(), "N").stream()
+        return toResponses(commentRepository.findByParent_IdAndDeletedYnOrderByCreatedAtAsc(parent.getId(), "N").stream()
                 .filter(reply -> reply.getDeletedAt() == null)
                 .sorted(Comparator.comparing(Comment::getCreatedAt))
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .collect(Collectors.toList()));
     }
 
     /**
@@ -109,7 +112,7 @@ public class CommentService {
                 parentId,
                 saved.getContent()));
 
-        return toResponse(saved);
+        return toResponse(saved, userAvatarService.getAvatarUrls(List.of(userId)));
     }
 
     /**
@@ -133,7 +136,7 @@ public class CommentService {
         comment.setUpdatedAt(LocalDateTime.now());
 
         Comment saved = commentRepository.save(comment);
-        return toResponse(saved);
+        return toResponse(saved, userAvatarService.getAvatarUrls(List.of(comment.getUser().getId())));
     }
 
     /**
@@ -176,13 +179,22 @@ public class CommentService {
      */
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public List<CommentDto.Response> listByUser(Long userId) {
-        return commentRepository.findByUser_IdAndDeletedYnOrderByCreatedAtDesc(userId, "N").stream()
+        return toResponses(commentRepository.findByUser_IdAndDeletedYnOrderByCreatedAtDesc(userId, "N").stream()
                 .filter(comment -> comment.getDeletedAt() == null)
-                .map(this::toResponse)
+                .collect(Collectors.toList()));
+    }
+
+    private List<CommentDto.Response> toResponses(List<Comment> comments) {
+        Map<Long, String> avatarUrls = userAvatarService.getAvatarUrls(comments.stream()
+                .map(comment -> comment.getUser() != null ? comment.getUser().getId() : null)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet()));
+        return comments.stream()
+                .map(comment -> toResponse(comment, avatarUrls))
                 .collect(Collectors.toList());
     }
 
-    private CommentDto.Response toResponse(Comment comment) {
+    private CommentDto.Response toResponse(Comment comment, Map<Long, String> avatarUrls) {
         CommentDto.Response response = new CommentDto.Response();
         response.id = comment.getId();
         response.postId = comment.getPost().getId();
@@ -190,6 +202,7 @@ public class CommentService {
         response.name = comment.getUser().getName();
         response.nickname = comment.getUser().getNickname();
         response.username = comment.getUser().getUsername();
+        response.avatarUrl = avatarUrls.get(comment.getUser().getId());
         response.parentId = comment.getParent() != null ? comment.getParent().getId() : null;
         response.content = comment.getContent();
         response.deletedYn = comment.getDeletedYn();

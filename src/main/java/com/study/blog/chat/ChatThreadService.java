@@ -71,6 +71,7 @@ public class ChatThreadService {
         response.setType(source.getType());
         response.setTitle(source.getTitle());
         response.setDisplayTitle(source.getDisplayTitle());
+        response.setAvatarUrl(source.getAvatarUrl());
         response.setDirectKey(source.getDirectKey());
         response.setLastMessage(source.getLastMessage());
         response.setLastActivityAt(source.getLastActivityAt());

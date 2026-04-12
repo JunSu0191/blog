@@ -62,6 +62,7 @@ public class ChatContractDto {
         private ConversationType type;
         private String title;
         private String displayTitle;
+        private String avatarUrl;
         private String directKey;
         private ChatDto.MessageResponse lastMessage;
         private LocalDateTime lastActivityAt;

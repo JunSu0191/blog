@@ -3,6 +3,7 @@ package com.study.blog.auth;
 import com.study.blog.core.response.ApiResponseTemplate;
 import com.study.blog.oauth.OAuthAccountService;
 import com.study.blog.security.JwtUtil;
+import com.study.blog.user.UserAvatarService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserRepository;
 import com.study.blog.verification.VerificationChannel;
@@ -25,6 +26,8 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.nullable;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -46,6 +49,8 @@ class AuthControllerTest {
     private AccountRecoveryService accountRecoveryService;
     @Mock
     private OAuthAccountService oauthAccountService;
+    @Mock
+    private UserAvatarService userAvatarService;
 
     private AuthController authController;
 
@@ -58,7 +63,9 @@ class AuthControllerTest {
                 jwtUtil,
                 verificationService,
                 accountRecoveryService,
-                oauthAccountService);
+                oauthAccountService,
+                userAvatarService);
+        lenient().when(userAvatarService.getAvatarUrl(nullable(Long.class))).thenReturn(null);
     }
 
     @Test
@@ -190,6 +197,25 @@ class AuthControllerTest {
         AuthResponse.Login data = (AuthResponse.Login) response.getBody().getData();
         assertThat(data.token()).isEqualTo("jwt-token");
         assertThat(data.user().username()).isEqualTo("tlswnstn21");
+    }
+
+    @Test
+    void meShouldIncludeAvatarUrl() {
+        Authentication authentication = mockAuthentication("test");
+        when(userRepository.findByUsernameAndDeletedYn("test", "N"))
+                .thenReturn(Optional.of(User.builder()
+                        .id(6L)
+                        .username("test")
+                        .name("tester")
+                        .password("encoded")
+                        .deletedYn("N")
+                        .build()));
+        when(userAvatarService.getAvatarUrl(6L)).thenReturn("https://cdn.example.com/avatar.png");
+
+        ResponseEntity<ApiResponseTemplate<Object>> response = authController.me(authentication);
+
+        AuthResponse.UserSummary data = (AuthResponse.UserSummary) response.getBody().getData();
+        assertThat(data.avatarUrl()).isEqualTo("https://cdn.example.com/avatar.png");
     }
 
     private Authentication mockAuthentication(String username) {

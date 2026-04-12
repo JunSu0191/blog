@@ -6,7 +6,7 @@ import com.study.blog.user.UserStatus;
 public class AuthResponse {
 
     public record UserSummary(Long id, String username, String name, String nickname,
-                              String email, String phoneNumber,
+                              String email, String phoneNumber, String avatarUrl,
                               UserRole role, UserStatus status, Boolean mustChangePassword) {
     }
 

@@ -4,6 +4,7 @@ import com.study.blog.core.response.ApiResponseFactory;
 import com.study.blog.core.response.ApiResponseTemplate;
 import com.study.blog.oauth.OAuthAccountService;
 import com.study.blog.security.JwtUtil;
+import com.study.blog.user.UserAvatarService;
 import com.study.blog.user.User;
 import com.study.blog.user.UserNamePolicy;
 import com.study.blog.user.UserRole;
@@ -40,12 +41,14 @@ public class AuthController {
     private final VerificationService verificationService;
     private final AccountRecoveryService accountRecoveryService;
     private final OAuthAccountService oauthAccountService;
+    private final UserAvatarService userAvatarService;
 
     public AuthController(UserRepository userRepository, PasswordEncoder passwordEncoder,
             AuthenticationManager authenticationManager, JwtUtil jwtUtil,
             VerificationService verificationService,
             AccountRecoveryService accountRecoveryService,
-            OAuthAccountService oauthAccountService) {
+            OAuthAccountService oauthAccountService,
+            UserAvatarService userAvatarService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
@@ -53,6 +56,7 @@ public class AuthController {
         this.verificationService = verificationService;
         this.accountRecoveryService = accountRecoveryService;
         this.oauthAccountService = oauthAccountService;
+        this.userAvatarService = userAvatarService;
     }
 
     @GetMapping("/check-username")
@@ -232,6 +236,7 @@ public class AuthController {
                 user.getNickname(),
                 user.getEmail(),
                 user.getPhoneNumber(),
+                userAvatarService.getAvatarUrl(user.getId()),
                 user.getRole(),
                 user.getStatus(),
                 user.getMustChangePassword());

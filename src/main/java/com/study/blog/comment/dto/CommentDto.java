@@ -27,6 +27,7 @@ public class CommentDto {
         public String name; // 사용자 이름
         public String nickname; // 사용자 닉네임
         public String username; // 사용자 아이디(공개 블로그 URL 키)
+        public String avatarUrl; // 작성자 아바타 URL
         public Long parentId; // 부모 댓글 ID
         public String content;
         public String deletedYn;

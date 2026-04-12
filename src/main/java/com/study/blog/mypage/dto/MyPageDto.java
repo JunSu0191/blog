@@ -1,6 +1,9 @@
 package com.study.blog.mypage.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 public class MyPageDto {
 
@@ -32,7 +35,8 @@ public class MyPageDto {
         private StatsResponse stats;
     }
 
-    @Data
+    @Getter
+    @Setter
     public static class UpdateProfileRequest {
         private String name;
         private String nickname;
@@ -43,5 +47,13 @@ public class MyPageDto {
         private String avatarUrl;
         private String websiteUrl;
         private String location;
+
+        @JsonIgnore
+        private boolean avatarUrlPresent;
+
+        public void setAvatarUrl(String avatarUrl) {
+            this.avatarUrl = avatarUrl;
+            this.avatarUrlPresent = true;
+        }
     }
 }

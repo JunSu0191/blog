@@ -88,7 +88,7 @@ public class MyPageService {
         if (req.getBio() != null) {
             profile.setBio(trimToNull(req.getBio()));
         }
-        if (req.getAvatarUrl() != null) {
+        if (req.isAvatarUrlPresent()) {
             profile.setAvatarUrl(trimToNull(req.getAvatarUrl()));
         }
         if (req.getWebsiteUrl() != null) {
