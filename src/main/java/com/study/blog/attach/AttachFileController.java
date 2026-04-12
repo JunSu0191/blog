@@ -10,6 +10,7 @@ import me.desair.tus.server.TusFileUploadService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -25,18 +26,24 @@ import java.util.UUID;
 public class AttachFileController {
     private static final Logger log = LoggerFactory.getLogger(AttachFileController.class);
     private static final String DEFAULT_ATTACH_DIR = "attachments";
+    private static final String AVATAR_DIR = "avatars";
+    private static final String PURPOSE_AVATAR = "avatar";
+    private static final List<String> ALLOWED_AVATAR_MIME_TYPES = List.of("image/jpeg", "image/png", "image/webp");
 
     private final AttachFileService attachFileService;
     private final TusFileUploadService tusFileUploadService;
     private final UploadStorageService uploadStorageService;
+    private final long maxImageSizeBytes;
 
     public AttachFileController(
             AttachFileService attachFileService,
             TusFileUploadService tusFileUploadService,
-            UploadStorageService uploadStorageService) {
+            UploadStorageService uploadStorageService,
+            @Value("${app.upload.image-max-size-bytes:5242880}") long maxImageSizeBytes) {
         this.attachFileService = attachFileService;
         this.tusFileUploadService = tusFileUploadService;
         this.uploadStorageService = uploadStorageService;
+        this.maxImageSizeBytes = maxImageSizeBytes;
     }
 
     @PostMapping
@@ -92,20 +99,27 @@ public class AttachFileController {
         // 파일명 처리
         String originalFileName = uploadInfo.getFileName() != null ? uploadInfo.getFileName() : "file";
         String storedName = normalizeStoredName(completeReq.storedName);
+        String normalizedPurpose = normalizePurpose(completeReq.purpose);
+        boolean avatarUpload = PURPOSE_AVATAR.equals(normalizedPurpose);
+        if (avatarUpload) {
+            ResponseEntity<ApiResponseTemplate<TusCompleteResponse>> validationError = validateAvatarUpload(uploadInfo, uploadUri, uploadId);
+            if (validationError != null) {
+                return validationError;
+            }
+        }
         if (storedName == null) {
             storedName = UUID.randomUUID().toString();
         }
 
-        // 파일 확장자 추가 (원본 파일명에서)
-        if (originalFileName.contains(".") && !storedName.contains(".")) {
-            String extension = originalFileName.substring(originalFileName.lastIndexOf("."));
+        String extension = resolveExtension(originalFileName, uploadInfo.getFileMimeType(), avatarUpload);
+        if (extension != null && !storedName.contains(".")) {
             storedName = storedName + extension;
         }
 
         String storedPath;
         try (InputStream inputStream = tusFileUploadService.getUploadedBytes(uploadUri)) {
             storedPath = uploadStorageService.store(
-                    DEFAULT_ATTACH_DIR + "/" + storedName,
+                    (avatarUpload ? AVATAR_DIR : DEFAULT_ATTACH_DIR) + "/" + storedName,
                     inputStream,
                     uploadInfo.getFileMimeType(),
                     uploadInfo.getLength());
@@ -217,6 +231,7 @@ public class AttachFileController {
         public String originalName;
         public String storedName;
         public String path;
+        public String purpose;
     }
 
     // TUS 업로드 정보 응답 DTO
@@ -264,6 +279,46 @@ public class AttachFileController {
                 .replaceAll("_+", "_");
         sanitized = sanitized.replaceAll("^[_\\-.]+", "").replaceAll("[_\\-.]+$", "");
         return sanitized.isBlank() ? null : sanitized.toLowerCase(Locale.ROOT);
+    }
+
+    private ResponseEntity<ApiResponseTemplate<TusCompleteResponse>> validateAvatarUpload(
+            me.desair.tus.server.upload.UploadInfo uploadInfo,
+            String uploadUri,
+            String uploadId) {
+        String mimeType = normalizeNullable(uploadInfo.getFileMimeType());
+        String normalizedMimeType = mimeType == null ? null : mimeType.toLowerCase(Locale.ROOT);
+        if (normalizedMimeType == null || !ALLOWED_AVATAR_MIME_TYPES.contains(normalizedMimeType)) {
+            log.warn("avatar upload rejected by mime type: uploadId={}, mimeType={}", uploadId, mimeType);
+            cleanupTusUpload(uploadUri, uploadId);
+            return ApiResponseFactory.badRequest("아바타는 JPEG, PNG, WEBP 이미지만 업로드할 수 있습니다.");
+        }
+        Long length = uploadInfo.getLength();
+        if (length != null && length > maxImageSizeBytes) {
+            log.warn("avatar upload rejected by size: uploadId={}, length={}", uploadId, length);
+            cleanupTusUpload(uploadUri, uploadId);
+            return ApiResponseFactory.badRequest("아바타 이미지 크기 제한을 초과했습니다.");
+        }
+        return null;
+    }
+
+    private String resolveExtension(String originalFileName, String mimeType, boolean avatarUpload) {
+        if (originalFileName != null && originalFileName.contains(".")) {
+            return originalFileName.substring(originalFileName.lastIndexOf("."));
+        }
+        if (!avatarUpload || mimeType == null) {
+            return null;
+        }
+        return switch (mimeType.toLowerCase(Locale.ROOT)) {
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            case "image/webp" -> ".webp";
+            default -> null;
+        };
+    }
+
+    private String normalizePurpose(String purpose) {
+        String normalized = normalizeNullable(purpose);
+        return normalized == null ? null : normalized.toLowerCase(Locale.ROOT);
     }
 
     private String normalizeRequired(String value, String message) {

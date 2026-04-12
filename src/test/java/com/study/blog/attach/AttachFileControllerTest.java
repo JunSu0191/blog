@@ -19,6 +19,7 @@ import java.io.ByteArrayInputStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -41,7 +42,8 @@ class AttachFileControllerTest {
         AttachFileController controller = new AttachFileController(
                 attachFileService,
                 tusFileUploadService,
-                uploadStorageService);
+                uploadStorageService,
+                5_242_880L);
 
         AttachFileController.TusCompleteRequest completeRequest = new AttachFileController.TusCompleteRequest();
         completeRequest.uploadId = "upload-123";
@@ -86,5 +88,72 @@ class AttachFileControllerTest {
         verify(attachFileService).create(captor.capture());
         assertThat(captor.getValue().storedName).isEqualTo("photo_final.png");
         assertThat(captor.getValue().path).isEqualTo("https://cdn.example.com/attachments/photo_final.png");
+    }
+
+    @Test
+    void completeUploadShouldStoreAvatarUnderAvatarPathWhenPurposeIsAvatar() throws Exception {
+        AttachFileController controller = new AttachFileController(
+                attachFileService,
+                tusFileUploadService,
+                uploadStorageService,
+                5_242_880L);
+
+        AttachFileController.TusCompleteRequest completeRequest = new AttachFileController.TusCompleteRequest();
+        completeRequest.uploadId = "avatar-123";
+        completeRequest.originalName = "avatar.png";
+        completeRequest.storedName = "avatar_final";
+        completeRequest.purpose = "avatar";
+
+        when(tusFileUploadService.getUploadInfo("/api/attach-files/uploads/avatar-123")).thenReturn(uploadInfo);
+        when(uploadInfo.getOffset()).thenReturn(5L);
+        when(uploadInfo.getLength()).thenReturn(5L);
+        when(uploadInfo.getFileName()).thenReturn("avatar.png");
+        when(uploadInfo.getFileMimeType()).thenReturn("image/png");
+        when(tusFileUploadService.getUploadedBytes("/api/attach-files/uploads/avatar-123"))
+                .thenReturn(new ByteArrayInputStream("hello".getBytes()));
+        when(uploadStorageService.store(any(), any(), any(), any())).thenReturn("https://cdn.example.com/avatars/avatar_final.png");
+        when(uploadStorageService.toPublicUrl(request, "https://cdn.example.com/avatars/avatar_final.png"))
+                .thenReturn("https://cdn.example.com/avatars/avatar_final.png");
+
+        AttachFileDto.Response attachResponse = new AttachFileDto.Response();
+        attachResponse.id = 100L;
+        attachResponse.originalName = "avatar.png";
+        attachResponse.storedName = "avatar_final.png";
+        attachResponse.path = "https://cdn.example.com/avatars/avatar_final.png";
+        when(attachFileService.create(any())).thenReturn(attachResponse);
+
+        ResponseEntity<ApiResponseTemplate<AttachFileController.TusCompleteResponse>> response =
+                controller.completeUpload(completeRequest, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        verify(uploadStorageService).store(eq("avatars/avatar_final.png"), any(), eq("image/png"), eq(5L));
+    }
+
+    @Test
+    void completeUploadShouldRejectAvatarMimeTypeOutsideAllowList() throws Exception {
+        AttachFileController controller = new AttachFileController(
+                attachFileService,
+                tusFileUploadService,
+                uploadStorageService,
+                5_242_880L);
+
+        AttachFileController.TusCompleteRequest completeRequest = new AttachFileController.TusCompleteRequest();
+        completeRequest.uploadId = "avatar-124";
+        completeRequest.originalName = "avatar.gif";
+        completeRequest.purpose = "avatar";
+
+        when(tusFileUploadService.getUploadInfo("/api/attach-files/uploads/avatar-124")).thenReturn(uploadInfo);
+        when(uploadInfo.getOffset()).thenReturn(10L);
+        when(uploadInfo.getLength()).thenReturn(10L);
+        when(uploadInfo.getFileName()).thenReturn("avatar.gif");
+        when(uploadInfo.getFileMimeType()).thenReturn("image/gif");
+
+        ResponseEntity<ApiResponseTemplate<AttachFileController.TusCompleteResponse>> response =
+                controller.completeUpload(completeRequest, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        verify(uploadStorageService, never()).store(any(), any(), any(), any());
+        verify(attachFileService, never()).create(any());
+        verify(tusFileUploadService).deleteUpload("/api/attach-files/uploads/avatar-124");
     }
 }
